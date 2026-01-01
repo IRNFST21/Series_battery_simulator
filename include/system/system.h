@@ -55,29 +55,36 @@ enum
 
 enum
 {
-    APPLY_I2C_OK           = 0,
-    APPLY_I2C_ERR_GENERIC  = (1u << 0),
-    APPLY_I2C_ERR_RPOT     = (1u << 1),
-    APPLY_I2C_ERR_MODE_SW  = (1u << 2),
-    APPLY_I2C_ERR_BACKLIGHT= (1u << 3),
+    APPLY_I2C_OK            = 0,
+    APPLY_I2C_ERR_GENERIC   = (1u << 0),
+    APPLY_I2C_ERR_RPOT      = (1u << 1),
+    APPLY_I2C_ERR_MODE_SW   = (1u << 2),
+    APPLY_I2C_ERR_BACKLIGHT = (1u << 3),
 };
+
+// =========================
+// Curves
+// =========================
+#define CURVE_LEN 32
+
+typedef struct
+{
+    uint16_t len;                 // = CURVE_LEN
+    int16_t  curve0[CURVE_LEN];
+    int16_t  curve1[CURVE_LEN];
+    int16_t  curve2[CURVE_LEN];
+} CurveData;
 
 // =========================
 // Shared data structs
 // =========================
-
-// MeasurementData: aangepast zodat alle vier de metingen weg geschreven worden
-// AIN1: I_sink   = (5/3) * V_adc
-// AIN2: V_out    = 5.333 * V_adc
-// AIN3: I_source = (5/3) * V_adc
-// AIN4: Temp_sink: 125C == 1.75V => temp = V_adc * (125/1.75)
 typedef struct
 {
     uint32_t t_us;          // timestamp (micros)
-    float    v_out;         // output voltage (V)
-    float    i_sink;        // sink current (A)
-    float    i_source;      // source current (A)
-    float    temp_sink_c;   // sink temperature (°C)
+    float    v_out;         // Vout = 5.333 * V_adc(AIN2)
+    float    i_sink;        // Isink = (5/3) * V_adc(AIN1)
+    float    i_source;      // Isource = (5/3) * V_adc(AIN3)
+    float    temp_sink_c;   // temp = V_adc(AIN4) * (125/1.75)
     uint32_t meas_flags;    // MEAS_* flags
 } MeasurementData;
 
@@ -102,12 +109,15 @@ typedef struct
     float set_voltage;
     float set_current;
     bool  logging_enabled;
+
+    // 0..2 -> curve0/curve1/curve2
     uint8_t curve_id;
 } ConfigData;
 
 typedef struct
 {
     SystemState state;
+
     PowerMode   mode_current;
     PowerMode   mode_pending;
 
@@ -134,6 +144,9 @@ typedef struct
     ConfigData      cfg;
     SystemStatus    status;
     IOShared        io;
+
+    CurveData       curves;
+
     uint32_t        seq;
 } SystemData;
 
@@ -142,7 +155,6 @@ typedef SystemData SystemSnapshot;
 // =========================
 // System API
 // =========================
-
 void system_init(void);
 
 void system_read_snapshot(SystemSnapshot* out_snapshot);
@@ -153,6 +165,8 @@ void system_write_apply_status(const ApplyStatus* apply);
 void system_write_config(const ConfigData* cfg);
 void system_write_status(const SystemStatus* status);
 void system_write_io_shared(const IOShared* io);
+
+void system_write_curves(const CurveData* curves);
 
 void system_set_status_flag(uint32_t flag_bits);
 void system_clear_status_flag(uint32_t flag_bits);
