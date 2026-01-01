@@ -20,6 +20,137 @@
 #define UI_COL_UI2_BG          0x000000   // background for UI2
 #define UI_COL_UI2_TEXT        0xEDBE0E   // UI2 text
 
+// =========================
+// Overlay (modal kaartje) - TOP LAYER + shift links voor sidebar
+// =========================
+static lv_obj_t* ov_root  = nullptr;
+static lv_obj_t* ov_card  = nullptr;
+static lv_obj_t* ov_title = nullptr;
+static lv_obj_t* ov_value = nullptr;
+static lv_obj_t* ov_hint  = nullptr;
+
+// Reserveer rechts ruimte voor 5 knoppen kolom (sidebar).
+// Jouw sidebar = 120px breed + ~10px "lucht" (marge/padding/veiligheid).
+static constexpr int UI_RIGHT_RESERVED_PX = 130;
+
+// Card offset: center van card komt in het "left content area"
+// Offset = -(reserved/2)
+static constexpr int OVERLAY_X_OFFSET = -(UI_RIGHT_RESERVED_PX / 2);
+static constexpr int OVERLAY_Y_OFFSET = 0;
+
+static void overlay_ensure_created()
+{
+    // Belangrijk: TOP LAYER, zodat overlay altijd vóór alles staat
+    lv_obj_t* top = lv_layer_top();
+    if (ov_root && lv_obj_get_parent(ov_root) == top) return;
+
+    // Root overlay (full-screen) op top-layer
+    ov_root = lv_obj_create(top);
+    lv_obj_set_size(ov_root, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(ov_root, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(ov_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(ov_root, LV_SCROLLBAR_MODE_OFF);
+
+    // Semi-transparante achtergrond
+    lv_obj_set_style_bg_color(ov_root, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(ov_root, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_border_width(ov_root, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(ov_root, 0, LV_PART_MAIN);
+
+    // Card in het midden, maar verschoven naar links (weg van sidebar)
+    ov_card = lv_obj_create(ov_root);
+    lv_obj_set_size(ov_card, 300, 150);
+    lv_obj_align(ov_card, LV_ALIGN_CENTER, OVERLAY_X_OFFSET, OVERLAY_Y_OFFSET);
+    lv_obj_clear_flag(ov_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(ov_card, LV_SCROLLBAR_MODE_OFF);
+
+    // Card style
+    lv_obj_set_style_bg_color(ov_card, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(ov_card, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(ov_card, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_border_width(ov_card, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(ov_card, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(ov_card, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(ov_card, 8, LV_PART_MAIN);
+
+    // Title
+    ov_title = lv_label_create(ov_card);
+    lv_label_set_text(ov_title, "Edit");
+    lv_obj_set_style_text_color(ov_title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(ov_title, &lv_font_montserrat_14, 0);
+    lv_obj_align(ov_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    // Value (groot)
+    ov_value = lv_label_create(ov_card);
+    lv_label_set_text(ov_value, "Value");
+    lv_obj_set_style_text_color(ov_value, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(ov_value, &lv_font_montserrat_18, 0);
+    lv_obj_align(ov_value, LV_ALIGN_CENTER, 0, -5);
+
+    // Hint (klein)
+    ov_hint = lv_label_create(ov_card);
+    lv_label_set_text(ov_hint, "Rotate = change | Press = OK | Long = Cancel");
+    lv_obj_set_style_text_color(ov_hint, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(ov_hint, &lv_font_montserrat_12, 0);
+    lv_obj_align(ov_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    // Start verborgen
+    lv_obj_add_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_overlay_show(const char* title, const char* value, const char* hint)
+{
+    overlay_ensure_created();
+
+    // Forceer foreground op top-layer (zekerheid)
+    if (ov_root) lv_obj_move_foreground(ov_root);
+
+    if (ov_title && title) lv_label_set_text(ov_title, title);
+    if (ov_value && value) lv_label_set_text(ov_value, value);
+    if (ov_hint  && hint)  lv_label_set_text(ov_hint, hint);
+
+    if (ov_root) lv_obj_clear_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_overlay_set_value(const char* value)
+{
+    if (!ov_root || lv_obj_has_flag(ov_root, LV_OBJ_FLAG_HIDDEN)) return;
+    if (ov_value && value) lv_label_set_text(ov_value, value);
+}
+
+void ui_overlay_hide()
+{
+    if (!ov_root) return;
+    lv_obj_add_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool ui_overlay_is_visible()
+{
+    if (!ov_root) return false;
+    return !lv_obj_has_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+// =========================
+// Shared softkey styling helpers
+// =========================
+static void set_btn_style(lv_obj_t* btn, lv_obj_t* lbl, bool highlight)
+{
+    if (!btn) return;
+
+    if (highlight) {
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
+        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_TEXT), 0);
+    } else {
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BUTTON_BG), LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_BUTTON_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
+        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_BUTTON_TEXT), 0);
+    }
+}
+
 // ---------- UI1: Emulate / laadcurve-scherm ----------
 
 // pointers bewaren voor later gebruik / updates
@@ -46,6 +177,10 @@ static lv_obj_t* ui1_btn_reset         = nullptr;
 // labels ín de knoppen (voor dynamische tekst)
 static lv_obj_t* ui1_lbl_btn_nominal_v = nullptr;
 static lv_obj_t* ui1_lbl_btn_capacity  = nullptr;
+
+// UI1 softkey arrays (1..5)
+static lv_obj_t* ui1_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t* ui1_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 
 // lijn in de grafiek
 static lv_obj_t* ui1_progress_line     = nullptr;
@@ -88,6 +223,8 @@ static void ui1_update_progress_line(const DisplayModel& m)
 void ui1_create() {
   lv_obj_t* scr = lv_screen_active();
   lv_obj_clean(scr);
+
+  overlay_ensure_created(); // overlay opnieuw aan huidige screen hangen (verborgen)
 
   // -------- achtergrond / hoofdvlak --------
   lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
@@ -242,12 +379,25 @@ void ui1_create() {
   ui1_btn_reset        = make_btn("Reset");
 
   // labels uit de knoppen trekken zodat we ze kunnen updaten
-  if (ui1_btn_nominal_v) {
-    ui1_lbl_btn_nominal_v = lv_obj_get_child(ui1_btn_nominal_v, 0);
+  if (ui1_btn_nominal_v)  ui1_lbl_btn_nominal_v = lv_obj_get_child(ui1_btn_nominal_v, 0);
+  if (ui1_btn_capacity)   ui1_lbl_btn_capacity  = lv_obj_get_child(ui1_btn_capacity, 0);
+
+  // Softkey arrays vullen (1..5)
+  ui1_btn_arr[0] = ui1_btn_choose_curve;
+  ui1_btn_arr[1] = ui1_btn_choose_setp;
+  ui1_btn_arr[2] = ui1_btn_nominal_v;
+  ui1_btn_arr[3] = ui1_btn_capacity;
+  ui1_btn_arr[4] = ui1_btn_reset;
+
+  for (int i = 0; i < 5; ++i) {
+      ui1_lbl_arr[i] = ui1_btn_arr[i] ? lv_obj_get_child(ui1_btn_arr[i], 0) : nullptr;
   }
-  if (ui1_btn_capacity) {
-    ui1_lbl_btn_capacity = lv_obj_get_child(ui1_btn_capacity, 0);
-  }
+
+  // Reset highlight state
+  for (int i = 0; i < 5; ++i) set_btn_style(ui1_btn_arr[i], ui1_lbl_arr[i], false);
+
+  // Overlay blijft hidden
+  ui_overlay_hide();
 }
 
 void ui1_update(const DisplayModel& m) {
@@ -307,19 +457,21 @@ static lv_obj_t* ui2_arc             = nullptr;
 static lv_obj_t* ui2_label_voltage   = nullptr;
 static lv_obj_t* ui2_label_ampere    = nullptr;
 
-// Buttons + labels inside buttons (als je later wil updaten)
+// Buttons
 static lv_obj_t* ui2_btn_voltage       = nullptr;
 static lv_obj_t* ui2_btn_current_limit = nullptr;
 static lv_obj_t* ui2_btn_empty3        = nullptr;
 static lv_obj_t* ui2_btn_empty4        = nullptr;
 static lv_obj_t* ui2_btn_reset         = nullptr;
 
-// helper: maak button met jouw style
+// UI2 softkey arrays
+static lv_obj_t* ui2_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t* ui2_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+
 static lv_obj_t* ui2_make_btn(lv_obj_t* parent, const char* txt)
 {
     lv_obj_t* btn = lv_btn_create(parent);
 
-    // breedte 100%, hoogte wordt door flex verdeeld
     lv_obj_set_width(btn, LV_PCT(100));
     lv_obj_set_height(btn, LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(btn, 1);
@@ -348,17 +500,16 @@ void ui2_create()
     lv_obj_t* scr = lv_screen_active();
     lv_obj_clean(scr);
 
-    // --- Screen background ---
+    overlay_ensure_created();
+
     lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-    // --- Title ---
     lv_obj_t* title = lv_label_create(scr);
-    lv_label_set_text(title, "constant scource"); // laat je spelling zoals in je ontwerp
+    lv_label_set_text(title, "constant scource");
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
-    // --- Sidebar rechts (zelfde idee als UI1) ---
     lv_obj_t* sidebar = lv_obj_create(scr);
     lv_obj_set_size(sidebar, 120, 300);
     lv_obj_align(sidebar, LV_ALIGN_RIGHT_MID, -5, 5);
@@ -381,80 +532,69 @@ void ui2_create()
 
     ui2_btn_voltage       = ui2_make_btn(sidebar, "Voltage");
     ui2_btn_current_limit = ui2_make_btn(sidebar, "current limit");
-    ui2_btn_empty3        = ui2_make_btn(sidebar, "");       // leeg
-    ui2_btn_empty4        = ui2_make_btn(sidebar, "");       // leeg
+    ui2_btn_empty3        = ui2_make_btn(sidebar, "");
+    ui2_btn_empty4        = ui2_make_btn(sidebar, "");
     ui2_btn_reset         = ui2_make_btn(sidebar, "Reset");
 
-    // --- Arc gauge ---
+    ui2_btn_arr[0] = ui2_btn_voltage;
+    ui2_btn_arr[1] = ui2_btn_current_limit;
+    ui2_btn_arr[2] = ui2_btn_empty3;
+    ui2_btn_arr[3] = ui2_btn_empty4;
+    ui2_btn_arr[4] = ui2_btn_reset;
+    for (int i = 0; i < 5; ++i) {
+        ui2_lbl_arr[i] = ui2_btn_arr[i] ? lv_obj_get_child(ui2_btn_arr[i], 0) : nullptr;
+        set_btn_style(ui2_btn_arr[i], ui2_lbl_arr[i], false);
+    }
+
     ui2_arc = lv_arc_create(scr);
     lv_obj_set_size(ui2_arc, 180, 180);
     lv_obj_align(ui2_arc, LV_ALIGN_CENTER, -60, -5);
 
-    // Arc instellingen: 0..100%
     lv_arc_set_range(ui2_arc, 0, 100);
-
-    // Full ring zichtbaar (achtergrondring)
     lv_arc_set_bg_angles(ui2_arc, 0, 360);
-
-    // Start onderaan: rotation op 270 graden (6 o’clock als startpunt)
     lv_arc_set_rotation(ui2_arc, 270);
 
-    // Background ring (vaste 360°)
     lv_obj_set_style_arc_width(ui2_arc, 12, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(ui2_arc,
-                            lv_color_hex(0x5A5400), // donker geel / olijf
-                            LV_PART_MAIN);
+    lv_obj_set_style_arc_color(ui2_arc, lv_color_hex(0x5A5400), LV_PART_MAIN);
 
-    // Indicator ring (bewegend deel)
     lv_obj_set_style_arc_width(ui2_arc, 12, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(ui2_arc,
-                            lv_color_hex(UI_COL_CHART_SERIES), // helder geel
-                            LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(ui2_arc, lv_color_hex(UI_COL_CHART_SERIES), LV_PART_INDICATOR);
 
-    // Knob verbergen
     lv_obj_set_style_opa(ui2_arc, LV_OPA_TRANSP, LV_PART_KNOB);
-
-    // Geen input / scroll
     lv_obj_clear_flag(ui2_arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui2_arc, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(ui2_arc, LV_SCROLLBAR_MODE_OFF);
 
-    // Startwaarde 0%
     lv_arc_set_value(ui2_arc, 0);
 
-    // --- Voltage label IN de cirkel ---
     ui2_label_voltage = lv_label_create(scr);
     lv_obj_set_style_text_color(ui2_label_voltage, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui2_label_voltage, "Voltage:\n0.00");
     lv_obj_align_to(ui2_label_voltage, ui2_arc, LV_ALIGN_CENTER, 0, 0);
 
-    // --- Ampere label onder de cirkel ---
     ui2_label_ampere = lv_label_create(scr);
     lv_obj_set_style_text_color(ui2_label_ampere, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui2_label_ampere, "Ampere:\n0.00");
     lv_obj_align_to(ui2_label_ampere, ui2_arc, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
+
+    ui_overlay_hide();
 }
 
 void ui2_update(const DisplayModel& m)
 {
     float vmax = (m.ui2.vmax <= 0.001f) ? 1.0f : m.ui2.vmax;
 
-    // percentage voor de ring (0..100)
     int pct = (int)((m.ui2.set_voltage / vmax) * 100.0f + 0.5f);
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
 
-    if (ui2_arc) {
-        lv_arc_set_value(ui2_arc, pct);
-    }
+    if (ui2_arc) lv_arc_set_value(ui2_arc, pct);
 
-    // Labels updaten
     if (ui2_label_voltage) {
         char b[32];
         snprintf(b, sizeof(b), "Voltage:\n%.2f", m.ui2.set_voltage);
         lv_label_set_text(ui2_label_voltage, b);
     }
-
     if (ui2_label_ampere) {
         char b[32];
         snprintf(b, sizeof(b), "Ampere:\n%.2f", m.ui2.meas_ampere);
@@ -462,27 +602,25 @@ void ui2_update(const DisplayModel& m)
     }
 }
 
-
 // ================= UI 3: Constant sink (gauge) =================
 
-// UI3 object pointers
 static lv_obj_t* ui3_arc             = nullptr;
-static lv_obj_t* ui3_label_ampere    = nullptr;  // in de cirkel: ingestelde A
-static lv_obj_t* ui3_label_voltage   = nullptr;  // onder de cirkel: gemeten V
+static lv_obj_t* ui3_label_ampere    = nullptr;
+static lv_obj_t* ui3_label_voltage   = nullptr;
 
-// Buttons
 static lv_obj_t* ui3_btn_ampere        = nullptr;
 static lv_obj_t* ui3_btn_vlimit        = nullptr;
 static lv_obj_t* ui3_btn_empty3        = nullptr;
 static lv_obj_t* ui3_btn_empty4        = nullptr;
 static lv_obj_t* ui3_btn_reset         = nullptr;
 
-// helper: maak button met jouw style (zelfde als UI2/1)
+static lv_obj_t* ui3_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t* ui3_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+
 static lv_obj_t* ui3_make_btn(lv_obj_t* parent, const char* txt)
 {
     lv_obj_t* btn = lv_btn_create(parent);
 
-    // breedte 100%, hoogte door flex verdeeld
     lv_obj_set_width(btn, LV_PCT(100));
     lv_obj_set_height(btn, LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(btn, 1);
@@ -511,17 +649,16 @@ void ui3_create()
     lv_obj_t* scr = lv_screen_active();
     lv_obj_clean(scr);
 
-    // achtergrond
+    overlay_ensure_created();
+
     lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-    // titel
     lv_obj_t* title = lv_label_create(scr);
     lv_label_set_text(title, "constant sink");
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
-    // sidebar rechts
     lv_obj_t* sidebar = lv_obj_create(scr);
     lv_obj_set_size(sidebar, 120, 300);
     lv_obj_align(sidebar, LV_ALIGN_RIGHT_MID, -5, 5);
@@ -548,24 +685,30 @@ void ui3_create()
     ui3_btn_empty4 = ui3_make_btn(sidebar, "");
     ui3_btn_reset  = ui3_make_btn(sidebar, "Reset");
 
-    // arc + labels links (zelfde plaatsing-aanpak als UI2)
+    ui3_btn_arr[0] = ui3_btn_ampere;
+    ui3_btn_arr[1] = ui3_btn_vlimit;
+    ui3_btn_arr[2] = ui3_btn_empty3;
+    ui3_btn_arr[3] = ui3_btn_empty4;
+    ui3_btn_arr[4] = ui3_btn_reset;
+    for (int i = 0; i < 5; ++i) {
+        ui3_lbl_arr[i] = ui3_btn_arr[i] ? lv_obj_get_child(ui3_btn_arr[i], 0) : nullptr;
+        set_btn_style(ui3_btn_arr[i], ui3_lbl_arr[i], false);
+    }
+
     ui3_arc = lv_arc_create(scr);
     lv_obj_set_size(ui3_arc, 180, 180);
     lv_obj_align(ui3_arc, LV_ALIGN_CENTER, -60, -5);
 
-    // arc instellingen 0..100%
     lv_arc_set_range(ui3_arc, 0, 100);
     lv_arc_set_bg_angles(ui3_arc, 0, 360);
     lv_arc_set_rotation(ui3_arc, 270);
 
-    // background ring (iets donkerder geel), indicator helder geel
     lv_obj_set_style_arc_width(ui3_arc, 12, LV_PART_MAIN);
     lv_obj_set_style_arc_color(ui3_arc, lv_color_hex(0x5A5400), LV_PART_MAIN);
 
     lv_obj_set_style_arc_width(ui3_arc, 12, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(ui3_arc, lv_color_hex(UI_COL_CHART_SERIES), LV_PART_INDICATOR);
 
-    // knob verbergen + geen input
     lv_obj_set_style_opa(ui3_arc, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_clear_flag(ui3_arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui3_arc, LV_OBJ_FLAG_SCROLLABLE);
@@ -573,33 +716,29 @@ void ui3_create()
 
     lv_arc_set_value(ui3_arc, 0);
 
-    // label in de cirkel: ingestelde ampere
     ui3_label_ampere = lv_label_create(scr);
     lv_obj_set_style_text_color(ui3_label_ampere, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui3_label_ampere, "Ampere:\n0.00");
     lv_obj_align_to(ui3_label_ampere, ui3_arc, LV_ALIGN_CENTER, 0, 0);
 
-    // label onder de cirkel: gemeten voltage
     ui3_label_voltage = lv_label_create(scr);
     lv_obj_set_style_text_color(ui3_label_voltage, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui3_label_voltage, "Voltage:\n0.00");
     lv_obj_align_to(ui3_label_voltage, ui3_arc, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
+
+    ui_overlay_hide();
 }
 
 void ui3_update(const DisplayModel& m)
 {
     float imax = (m.ui3.imax <= 0.001f) ? 1.0f : m.ui3.imax;
 
-    // ring percentage op basis van ingestelde ampere
     int pct = (int)((m.ui3.set_ampere / imax) * 100.0f + 0.5f);
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
 
-    if (ui3_arc) {
-        lv_arc_set_value(ui3_arc, pct);
-    }
+    if (ui3_arc) lv_arc_set_value(ui3_arc, pct);
 
-    // labels updaten
     if (ui3_label_ampere) {
         char b[32];
         snprintf(b, sizeof(b), "Ampere:\n%.2f", m.ui3.set_ampere);
@@ -612,3 +751,28 @@ void ui3_update(const DisplayModel& m)
         lv_label_set_text(ui3_label_voltage, b);
     }
 }
+
+// =========================
+// Public softkey helper API
+// =========================
+static void softkey_set(uint8_t idx, bool on, lv_obj_t* btn_arr[5], lv_obj_t* lbl_arr[5])
+{
+    if (idx < 1 || idx > 5) return;
+    const uint8_t i = (uint8_t)(idx - 1);
+    set_btn_style(btn_arr[i], lbl_arr[i], on);
+}
+
+static void softkey_text(uint8_t idx, const char* text, lv_obj_t* lbl_arr[5])
+{
+    if (idx < 1 || idx > 5) return;
+    const uint8_t i = (uint8_t)(idx - 1);
+    if (lbl_arr[i] && text) lv_label_set_text(lbl_arr[i], text);
+}
+
+void ui1_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui1_btn_arr, ui1_lbl_arr); }
+void ui2_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui2_btn_arr, ui2_lbl_arr); }
+void ui3_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui3_btn_arr, ui3_lbl_arr); }
+
+void ui1_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui1_lbl_arr); }
+void ui2_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui2_lbl_arr); }
+void ui3_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui3_lbl_arr); }

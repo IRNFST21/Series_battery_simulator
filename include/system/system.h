@@ -25,6 +25,14 @@ typedef enum
     POWER_MODE_SINK
 } PowerMode;
 
+// Welke UI is actief (DisplayTask gebruikt dit)
+typedef enum
+{
+    UI_SCREEN_EMULATE = 0,      // UI1
+    UI_SCREEN_CONST_SOURCE = 1, // UI2
+    UI_SCREEN_CONST_SINK = 2    // UI3
+} UiScreen;
+
 // =========================
 // Bitmasks
 // =========================
@@ -69,22 +77,56 @@ enum
 
 typedef struct
 {
-    uint16_t len;                 // = CURVE_LEN
+    uint16_t len; // altijd 32
     int16_t  curve0[CURVE_LEN];
     int16_t  curve1[CURVE_LEN];
     int16_t  curve2[CURVE_LEN];
 } CurveData;
 
 // =========================
-// Shared data structs
+// UI selection / instellingen (owned by DisplayTask)
 // =========================
 typedef struct
 {
+    UiScreen active_screen;     // UI1/UI2/UI3
+
+    // UI1 (emulate)
+    uint8_t selected_curve_id;  // 0..2
+    uint8_t start_index;        // 0..31
+    float   nominal_voltage;    // V
+    float   capacity_value;     // unit zoals jij op UI wil (nu "F")
+
+    // UI2 (const source)
+    float   ui2_set_voltage;    // V
+    float   ui2_current_limit;  // A (nog niet getoond in model, maar alvast in system)
+
+    // UI3 (const sink)
+    float   ui3_set_current;    // A
+    float   ui3_voltage_limit;  // V
+
+    // reset pulses (1-cycle flags)
+    bool    ui1_reset_pulse;
+    bool    ui2_reset_pulse;
+    bool    ui3_reset_pulse;
+
+} UiSelection;
+
+// =========================
+// Shared data structs
+// =========================
+
+// MeasurementData: alle vier de metingen
+// AIN1: I_sink   = (5/3) * V_adc
+// AIN2: V_out    = 5.333 * V_adc
+// AIN3: I_source = (5/3) * V_adc
+// AIN4: Temp_sink: 125C == 1.75V => temp = V_adc * (125/1.75)
+typedef struct
+{
     uint32_t t_us;          // timestamp (micros)
-    float    v_out;         // Vout = 5.333 * V_adc(AIN2)
-    float    i_sink;        // Isink = (5/3) * V_adc(AIN1)
-    float    i_source;      // Isource = (5/3) * V_adc(AIN3)
-    float    temp_sink_c;   // temp = V_adc(AIN4) * (125/1.75)
+    float    v_out;         // output voltage (V)
+    float    i_sink;        // sink current (A)
+    float    i_source;      // source current (A)
+    float    temp_sink_c;   // sink temperature (°C)
     uint32_t meas_flags;    // MEAS_* flags
 } MeasurementData;
 
@@ -109,15 +151,12 @@ typedef struct
     float set_voltage;
     float set_current;
     bool  logging_enabled;
-
-    // 0..2 -> curve0/curve1/curve2
     uint8_t curve_id;
 } ConfigData;
 
 typedef struct
 {
     SystemState state;
-
     PowerMode   mode_current;
     PowerMode   mode_pending;
 
@@ -146,6 +185,7 @@ typedef struct
     IOShared        io;
 
     CurveData       curves;
+    UiSelection     ui;
 
     uint32_t        seq;
 } SystemData;
@@ -166,7 +206,9 @@ void system_write_config(const ConfigData* cfg);
 void system_write_status(const SystemStatus* status);
 void system_write_io_shared(const IOShared* io);
 
+// nieuw
 void system_write_curves(const CurveData* curves);
+void system_write_ui_selection(const UiSelection* ui);
 
 void system_set_status_flag(uint32_t flag_bits);
 void system_clear_status_flag(uint32_t flag_bits);
