@@ -292,41 +292,51 @@ void ui1_create()
     ui1_series = lv_chart_add_series(ui1_chart, lv_color_hex(UI_COL_CHART_SERIES), LV_CHART_AXIS_PRIMARY_Y);
     for (int i = 0; i < 32; ++i) lv_chart_set_next_value(ui1_chart, ui1_series, 0);
 
-    // Onderste tekstblokken
+    // ---- Onderste tekstblokken: RELATIEF AAN DE CHART ----
+    const int under_chart_y = lv_obj_get_y(ui1_chart) + lv_obj_get_height(ui1_chart) + 10;
+
+    // measurements title (onder chart)
     ui1_label_meas_title = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_meas_title, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_meas_title, "measurements");
-    lv_obj_align(ui1_label_meas_title, LV_ALIGN_BOTTOM_LEFT, 10, -80);
+    lv_obj_align_to(ui1_label_meas_title, ui1_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
 
+    // voltage (onder measurements title)
     ui1_label_v_meas = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_v_meas, "voltage:\n0.00");
-    lv_obj_align(ui1_label_v_meas, LV_ALIGN_BOTTOM_LEFT, 10, -45);
+    lv_obj_align_to(ui1_label_v_meas, ui1_label_meas_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 6);
 
+    // ampere (rechts naast voltage)
     ui1_label_i_meas = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_i_meas, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_i_meas, "ampere:\n0.00");
-    lv_obj_align(ui1_label_i_meas, LV_ALIGN_BOTTOM_LEFT, 140, -45);
+    lv_obj_align_to(ui1_label_i_meas, ui1_label_v_meas, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
 
+    // loadcurve title (onder voltage blok)
     ui1_label_curve_title = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_curve_title, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_curve_title, "loadcurve");
-    lv_obj_align(ui1_label_curve_title, LV_ALIGN_BOTTOM_LEFT, 10, -20);
+    lv_obj_align_to(ui1_label_curve_title, ui1_label_v_meas, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
 
+    // runtime (onder loadcurve title) -> mm:ss
     ui1_label_runtime = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_runtime, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_runtime, "runtime:\n0 sec");
-    lv_obj_align(ui1_label_runtime, LV_ALIGN_BOTTOM_LEFT, 10, 0);
+    lv_label_set_text(ui1_label_runtime, "runtime:\n00:00");
+    lv_obj_align_to(ui1_label_runtime, ui1_label_curve_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 6);
 
+    // capacity (rechts naast runtime)
     ui1_label_capacity = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_capacity, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_capacity, "capacity:\n0.00 mAh");
-    lv_obj_align(ui1_label_capacity, LV_ALIGN_BOTTOM_LEFT, 140, 0);
+    lv_obj_align_to(ui1_label_capacity, ui1_label_runtime, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
 
+    // state (rechts naast capacity)
     ui1_label_state = lv_label_create(scr);
     lv_obj_set_style_text_color(ui1_label_state, lv_color_hex(UI_COL_TEXT), 0);
     lv_label_set_text(ui1_label_state, "state:\nload");
-    lv_obj_align(ui1_label_state, LV_ALIGN_BOTTOM_LEFT, 280, 0);
+    lv_obj_align_to(ui1_label_state, ui1_label_capacity, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
+
 
     ui_overlay_hide();
 }
@@ -357,10 +367,15 @@ void ui1_update(const DisplayModel& m)
         lv_label_set_text(ui1_label_i_meas, b);
     }
     if (ui1_label_runtime) {
+        uint32_t total = m.ui1.runtime_sec;
+        uint32_t mm = total / 60;
+        uint32_t ss = total % 60;
+
         char b[32];
-        snprintf(b, sizeof(b), "runtime:\n%lu sec", (unsigned long)m.ui1.runtime_sec);
+        snprintf(b, sizeof(b), "runtime:\n%02lu:%02lu", (unsigned long)mm, (unsigned long)ss);
         lv_label_set_text(ui1_label_runtime, b);
     }
+
     if (ui1_label_capacity) {
         char b[40];
         snprintf(b, sizeof(b), "capacity:\n%.2f mAh", (double)m.ui1.capacity_val);
