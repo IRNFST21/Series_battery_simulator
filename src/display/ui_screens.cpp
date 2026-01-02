@@ -752,27 +752,171 @@ void ui3_update(const DisplayModel& m)
     }
 }
 
-// =========================
-// Public softkey helper API
-// =========================
-static void softkey_set(uint8_t idx, bool on, lv_obj_t* btn_arr[5], lv_obj_t* lbl_arr[5])
+// ============================================================
+// UI helpers: softkey highlight + overlay (modal card)
+// ============================================================
+
+static void ui_set_btn_highlight(lv_obj_t* btn, bool on)
 {
-    if (idx < 1 || idx > 5) return;
-    const uint8_t i = (uint8_t)(idx - 1);
-    set_btn_style(btn_arr[i], lbl_arr[i], on);
+    if (!btn) return;
+
+    // label is child 0
+    lv_obj_t* lbl = lv_obj_get_child(btn, 0);
+
+    if (on)
+    {
+        // omgekeerd: zwart met gele tekst
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
+        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_TEXT), 0);
+    }
+    else
+    {
+        // default: geel met zwarte tekst
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BUTTON_BG), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_BUTTON_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
+        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_BUTTON_TEXT), 0);
+    }
 }
 
-static void softkey_text(uint8_t idx, const char* text, lv_obj_t* lbl_arr[5])
+void ui1_softkey_set_active(int idx, bool active)
 {
-    if (idx < 1 || idx > 5) return;
-    const uint8_t i = (uint8_t)(idx - 1);
-    if (lbl_arr[i] && text) lv_label_set_text(lbl_arr[i], text);
+    lv_obj_t* btn = nullptr;
+    switch (idx)
+    {
+        case 0: btn = ui1_btn_choose_curve; break;
+        case 1: btn = ui1_btn_choose_setp;  break;
+        case 2: btn = ui1_btn_nominal_v;    break;
+        case 3: btn = ui1_btn_capacity;     break;
+        case 4: btn = ui1_btn_reset;        break;
+        default: return;
+    }
+    ui_set_btn_highlight(btn, active);
 }
 
-void ui1_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui1_btn_arr, ui1_lbl_arr); }
-void ui2_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui2_btn_arr, ui2_lbl_arr); }
-void ui3_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui3_btn_arr, ui3_lbl_arr); }
+void ui2_softkey_set_active(int idx, bool active)
+{
+    lv_obj_t* btn = nullptr;
+    switch (idx)
+    {
+        case 0: btn = ui2_btn_voltage;       break;
+        case 1: btn = ui2_btn_current_limit; break;
+        case 2: btn = ui2_btn_empty3;        break;
+        case 3: btn = ui2_btn_empty4;        break;
+        case 4: btn = ui2_btn_reset;         break;
+        default: return;
+    }
+    ui_set_btn_highlight(btn, active);
+}
 
-void ui1_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui1_lbl_arr); }
-void ui2_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui2_lbl_arr); }
-void ui3_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui3_lbl_arr); }
+void ui3_softkey_set_active(int idx, bool active)
+{
+    lv_obj_t* btn = nullptr;
+    switch (idx)
+    {
+        case 0: btn = ui3_btn_ampere; break;
+        case 1: btn = ui3_btn_vlimit; break;
+        case 2: btn = ui3_btn_empty3; break;
+        case 3: btn = ui3_btn_empty4; break;
+        case 4: btn = ui3_btn_reset;  break;
+        default: return;
+    }
+    ui_set_btn_highlight(btn, active);
+}
+
+void ui1_softkey_clear_all()
+{
+    for (int i = 0; i < 5; ++i) ui1_softkey_set_active(i, false);
+}
+
+void ui2_softkey_clear_all()
+{
+    for (int i = 0; i < 5; ++i) ui2_softkey_set_active(i, false);
+}
+
+void ui3_softkey_clear_all()
+{
+    for (int i = 0; i < 5; ++i) ui3_softkey_set_active(i, false);
+}
+
+// ---------------- Overlay card ----------------
+static lv_obj_t* g_overlay_cont  = nullptr;
+static lv_obj_t* g_overlay_title = nullptr;
+static lv_obj_t* g_overlay_value = nullptr;
+static lv_obj_t* g_overlay_hint  = nullptr;
+
+static void ui_overlay_create_if_needed()
+{
+    if (g_overlay_cont) return;
+
+    lv_obj_t* parent = lv_layer_top();
+    g_overlay_cont = lv_obj_create(parent);
+
+    // Card size
+    lv_obj_set_size(g_overlay_cont, 280, 140);
+
+    // Shift left (ruimte voor sidebar rechts)
+    const int shift_x = -65;
+    lv_obj_align(g_overlay_cont, LV_ALIGN_CENTER, shift_x, 0);
+
+    lv_obj_set_style_radius(g_overlay_cont, 12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(g_overlay_cont, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_overlay_cont, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(g_overlay_cont, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_overlay_cont, 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(g_overlay_cont, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(g_overlay_cont, 6, LV_PART_MAIN);
+
+    // Overlay moet bovenop zitten en geen scroll
+    lv_obj_clear_flag(g_overlay_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(g_overlay_cont, LV_SCROLLBAR_MODE_OFF);
+
+    // Title
+    g_overlay_title = lv_label_create(g_overlay_cont);
+    lv_obj_set_style_text_color(g_overlay_title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(g_overlay_title, &lv_font_montserrat_16, 0);
+    lv_label_set_text(g_overlay_title, "");
+
+    // Value
+    g_overlay_value = lv_label_create(g_overlay_cont);
+    lv_obj_set_style_text_color(g_overlay_value, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(g_overlay_value, &lv_font_montserrat_18, 0);
+    lv_label_set_text(g_overlay_value, "");
+
+    // Hint
+    g_overlay_hint = lv_label_create(g_overlay_cont);
+    lv_obj_set_style_text_color(g_overlay_hint, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_set_style_text_font(g_overlay_hint, &lv_font_montserrat_12, 0);
+    lv_label_set_text(g_overlay_hint, "");
+}
+
+void ui_overlay_show(const char* title, const char* value_line, const char* hint_line)
+{
+    ui_overlay_create_if_needed();
+    ui_overlay_update(title, value_line, hint_line);
+    lv_obj_clear_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_overlay_update(const char* title, const char* value_line, const char* hint_line)
+{
+    ui_overlay_create_if_needed();
+    if (g_overlay_title) lv_label_set_text(g_overlay_title, title ? title : "");
+    if (g_overlay_value) lv_label_set_text(g_overlay_value, value_line ? value_line : "");
+    if (g_overlay_hint)  lv_label_set_text(g_overlay_hint,  hint_line ? hint_line : "");
+}
+
+void ui_overlay_hide()
+{
+    if (!g_overlay_cont) return;
+    lv_obj_add_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool ui_overlay_is_visible()
+{
+    if (!g_overlay_cont) return false;
+    return !lv_obj_has_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
+}

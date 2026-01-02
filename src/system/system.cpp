@@ -13,9 +13,10 @@ static SemaphoreHandle_t g_i2c_mutex  = nullptr;
 
 static void init_default_curves(CurveData* c)
 {
+    if (!c) return;
     c->len = CURVE_LEN;
 
-    // Voorbeeldcurves (0..100) zodat je chart meteen iets toont
+    // Voorbeeldcurves (0..100). Vervang later door jouw echte laad/ontlaadprofielen.
     const int16_t c0[CURVE_LEN] = {
         100,98,96,94,92,90,88,86,84,82,80,78,76,74,72,70,
         68,66,64,62,60,58,56,54,52,50,48,46,44,42,40,38
@@ -34,28 +35,6 @@ static void init_default_curves(CurveData* c)
     memcpy(c->curve2, c2, sizeof(c2));
 }
 
-static void init_default_ui(UiSelection* ui)
-{
-    memset(ui, 0, sizeof(*ui));
-
-    ui->active_screen = UI_SCREEN_EMULATE;
-
-    ui->selected_curve_id = 0;
-    ui->start_index       = 0;
-    ui->nominal_voltage   = 12.0f;
-    ui->capacity_value    = 1.00f;
-
-    ui->ui2_set_voltage   = 5.0f;
-    ui->ui2_current_limit = 2.0f;
-
-    ui->ui3_set_current   = 1.0f;
-    ui->ui3_voltage_limit = 12.0f;
-
-    ui->ui1_reset_pulse = false;
-    ui->ui2_reset_pulse = false;
-    ui->ui3_reset_pulse = false;
-}
-
 void system_init(void)
 {
     if (g_data_mutex == nullptr) g_data_mutex = xSemaphoreCreateMutex();
@@ -65,34 +44,47 @@ void system_init(void)
     memset(&g_sys, 0, sizeof(g_sys));
 
     g_sys.status.state        = SYS_STATE_CONFIG;
-    g_sys.status.mode_current = POWER_MODE_SOURCE;
-    g_sys.status.mode_pending = POWER_MODE_SOURCE;
+    g_sys.status.mode_current = POWER_MODE_EMULATE;
+    g_sys.status.mode_pending = POWER_MODE_EMULATE;
 
     // Veilig default: control disabled
     g_sys.status.status_flags = 0;
 
-    // Defaults config
+    // Defaults
     g_sys.cfg.set_voltage     = 0.0f;
     g_sys.cfg.set_current     = 0.0f;
     g_sys.cfg.logging_enabled = false;
     g_sys.cfg.curve_id        = 0;
 
-    // Control defaults
     g_sys.control.pwm_duty          = 0;
     g_sys.control.desired_rpot_code = 0;
     g_sys.control.desired_mode      = POWER_MODE_SOURCE;
 
-    // Apply defaults
     g_sys.apply.applied_rpot_code = 0;
     g_sys.apply.applied_mode      = POWER_MODE_SOURCE;
     g_sys.apply.apply_error_flags = APPLY_I2C_OK;
     g_sys.apply.last_apply_t_ms   = 0;
 
-    // Curves + UI defaults
+    // UI defaults
+    g_sys.ui.active_screen      = UI_SCREEN_EMULATE;
+    g_sys.ui.selected_curve_id  = 0;
+    g_sys.ui.start_index        = 0;
+    g_sys.ui.nominal_voltage    = 0.0f;
+    g_sys.ui.capacity_value     = 0.0f;
+    g_sys.ui.ui2_set_voltage    = 0.0f;
+    g_sys.ui.ui2_current_limit  = 0.0f;
+    g_sys.ui.ui3_set_current    = 0.0f;
+    g_sys.ui.ui3_voltage_limit  = 0.0f;
+
+    g_sys.ui_events.flags = UI_EVT_NONE;
+    g_sys.ui_events.field = UI_EDIT_NONE;
+    g_sys.ui_events.seq   = 0;
+
+    // Curves defaults
     init_default_curves(&g_sys.curves);
-    init_default_ui(&g_sys.ui);
 
     g_sys.seq = 0;
+
     system_unlock_data();
 }
 
@@ -175,12 +167,22 @@ void system_write_curves(const CurveData* curves)
     system_unlock_data();
 }
 
-void system_write_ui_selection(const UiSelection* ui)
+void system_write_ui_shared(const UIShared* ui)
 {
     if (!ui) return;
 
     system_lock_data();
     g_sys.ui = *ui;
+    g_sys.seq++;
+    system_unlock_data();
+}
+
+void system_write_ui_events(const UIEvents* ev)
+{
+    if (!ev) return;
+
+    system_lock_data();
+    g_sys.ui_events = *ev;
     g_sys.seq++;
     system_unlock_data();
 }

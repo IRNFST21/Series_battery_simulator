@@ -9,8 +9,18 @@ extern "C" {
 #endif
 
 // =========================
+// Constants
+// =========================
+
+// Default curve point count
+#ifndef CURVE_LEN
+#define CURVE_LEN 32
+#endif
+
+// =========================
 // Enums
 // =========================
+
 typedef enum
 {
     SYS_STATE_CONFIG = 0,
@@ -22,20 +32,41 @@ typedef enum
 typedef enum
 {
     POWER_MODE_SOURCE = 0,
-    POWER_MODE_SINK
+    POWER_MODE_SINK   = 1,
+    POWER_MODE_EMULATE= 2
 } PowerMode;
 
-// Welke UI is actief (DisplayTask gebruikt dit)
 typedef enum
 {
-    UI_SCREEN_EMULATE = 0,      // UI1
-    UI_SCREEN_CONST_SOURCE = 1, // UI2
-    UI_SCREEN_CONST_SINK = 2    // UI3
+    UI_SCREEN_EMULATE = 0,
+    UI_SCREEN_CONST_SOURCE,
+    UI_SCREEN_CONST_SINK,
+    UI_SCREEN_ERROR
 } UiScreen;
+
+typedef enum
+{
+    UI_EDIT_NONE = 0,
+
+    // UI1
+    UI_EDIT_UI1_CURVE,
+    UI_EDIT_UI1_START_INDEX,
+    UI_EDIT_UI1_NOMINAL_V,
+    UI_EDIT_UI1_CAPACITY,
+
+    // UI2
+    UI_EDIT_UI2_SET_V,
+    UI_EDIT_UI2_I_LIMIT,
+
+    // UI3
+    UI_EDIT_UI3_SET_I,
+    UI_EDIT_UI3_V_LIMIT,
+} UiEditField;
 
 // =========================
 // Bitmasks
 // =========================
+
 enum
 {
     FAULT_OV   = (1u << 0),
@@ -70,71 +101,40 @@ enum
     APPLY_I2C_ERR_BACKLIGHT = (1u << 3),
 };
 
-// =========================
-// Curves
-// =========================
-#define CURVE_LEN 32
-
-typedef struct
+enum
 {
-    uint16_t len; // altijd 32
-    int16_t  curve0[CURVE_LEN];
-    int16_t  curve1[CURVE_LEN];
-    int16_t  curve2[CURVE_LEN];
-} CurveData;
-
-// =========================
-// UI selection / instellingen (owned by DisplayTask)
-// =========================
-typedef struct
-{
-    UiScreen active_screen;     // UI1/UI2/UI3
-
-    // UI1 (emulate)
-    uint8_t selected_curve_id;  // 0..2
-    uint8_t start_index;        // 0..31
-    float   nominal_voltage;    // V
-    float   capacity_value;     // unit zoals jij op UI wil (nu "F")
-
-    // UI2 (const source)
-    float   ui2_set_voltage;    // V
-    float   ui2_current_limit;  // A (nog niet getoond in model, maar alvast in system)
-
-    // UI3 (const sink)
-    float   ui3_set_current;    // A
-    float   ui3_voltage_limit;  // V
-
-    // reset pulses (1-cycle flags)
-    bool    ui1_reset_pulse;
-    bool    ui2_reset_pulse;
-    bool    ui3_reset_pulse;
-
-} UiSelection;
+    UI_EVT_NONE            = 0,
+    UI_EVT_PARAM_CHANGED   = (1u << 0),
+    UI_EVT_EDIT_STARTED    = (1u << 1),
+    UI_EVT_EDIT_CONFIRMED  = (1u << 2),
+    UI_EVT_EDIT_CANCELLED  = (1u << 3),
+    UI_EVT_RESET_REQUESTED = (1u << 4),
+};
 
 // =========================
 // Shared data structs
 // =========================
 
-// MeasurementData: alle vier de metingen
+// MeasurementData:
 // AIN1: I_sink   = (5/3) * V_adc
 // AIN2: V_out    = 5.333 * V_adc
 // AIN3: I_source = (5/3) * V_adc
 // AIN4: Temp_sink: 125C == 1.75V => temp = V_adc * (125/1.75)
 typedef struct
 {
-    uint32_t t_us;          // timestamp (micros)
-    float    v_out;         // output voltage (V)
-    float    i_sink;        // sink current (A)
-    float    i_source;      // source current (A)
-    float    temp_sink_c;   // sink temperature (°C)
-    uint32_t meas_flags;    // MEAS_* flags
+    uint32_t t_us;        // timestamp (micros)
+    float    v_out;       // output voltage (V)
+    float    i_sink;      // sink current (A)
+    float    i_source;    // source current (A)
+    float    temp_sink_c; // sink temperature (°C)
+    uint32_t meas_flags;  // MEAS_* flags
 } MeasurementData;
 
 typedef struct
 {
-    uint16_t pwm_duty;             // fast output (ESP32 PWM)
-    uint16_t desired_rpot_code;    // slow output (I2C)
-    PowerMode desired_mode;        // slow output (via MCP23008 over I2C)
+    uint16_t pwm_duty;          // fast output (ESP32 PWM)
+    uint16_t desired_rpot_code; // slow output (I2C)
+    PowerMode desired_mode;     // slow output (via MCP23008 over I2C)
     uint32_t control_flags;
 } ControlData;
 
@@ -146,6 +146,7 @@ typedef struct
     uint32_t last_apply_t_ms;
 } ApplyStatus;
 
+// "Control" setpoints (later door ControlTask gebruikt)
 typedef struct
 {
     float set_voltage;
@@ -153,6 +154,42 @@ typedef struct
     bool  logging_enabled;
     uint8_t curve_id;
 } ConfigData;
+
+typedef struct
+{
+    int16_t  curve0[CURVE_LEN];
+    int16_t  curve1[CURVE_LEN];
+    int16_t  curve2[CURVE_LEN];
+    uint16_t len; // altijd CURVE_LEN, maar expliciet voor veiligheid
+} CurveData;
+
+// UI-shared: alles wat de UI moet tonen en/of in CONFIG kan aanpassen.
+typedef struct
+{
+    UiScreen active_screen;
+
+    // UI1 (Emulate)
+    uint8_t selected_curve_id; // 0..2
+    uint8_t start_index;       // 0..(CURVE_LEN-1)
+    float   nominal_voltage;   // 0..15 (step 0.1)
+    float   capacity_value;    // F (step 0.1)
+
+    // UI2 (Const Source)
+    float ui2_set_voltage;     // 0..15 (step 0.1)
+    float ui2_current_limit;   // A (step 0.1)
+
+    // UI3 (Const Sink)
+    float ui3_set_current;     // A (step 0.1)
+    float ui3_voltage_limit;   // 0..15 (step 0.1)
+} UIShared;
+
+// UI events: displayTask kan hier intent in zetten; ControlTask kan dit later consumeren.
+typedef struct
+{
+    uint32_t   flags;      // UI_EVT_* bitmask
+    UiEditField field;     // welk veld was relevant
+    uint32_t   seq;        // monotonic counter
+} UIEvents;
 
 typedef struct
 {
@@ -165,6 +202,7 @@ typedef struct
     uint32_t fault_latched_bits;
 } SystemStatus;
 
+// I/O snapshot: knoppen + encoder + outputs.
 typedef struct
 {
     uint32_t buttons_raw_bits;
@@ -185,7 +223,8 @@ typedef struct
     IOShared        io;
 
     CurveData       curves;
-    UiSelection     ui;
+    UIShared        ui;
+    UIEvents        ui_events;
 
     uint32_t        seq;
 } SystemData;
@@ -195,6 +234,7 @@ typedef SystemData SystemSnapshot;
 // =========================
 // System API
 // =========================
+
 void system_init(void);
 
 void system_read_snapshot(SystemSnapshot* out_snapshot);
@@ -206,9 +246,9 @@ void system_write_config(const ConfigData* cfg);
 void system_write_status(const SystemStatus* status);
 void system_write_io_shared(const IOShared* io);
 
-// nieuw
 void system_write_curves(const CurveData* curves);
-void system_write_ui_selection(const UiSelection* ui);
+void system_write_ui_shared(const UIShared* ui);
+void system_write_ui_events(const UIEvents* ev);
 
 void system_set_status_flag(uint32_t flag_bits);
 void system_clear_status_flag(uint32_t flag_bits);

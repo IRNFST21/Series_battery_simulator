@@ -1,5 +1,11 @@
 #pragma once
+
 #include <stdint.h>
+#include <stdbool.h>
+
+// =========================
+// Display model structs (data die displayTask aan de UI geeft)
+// =========================
 
 struct UI1Model {
   int16_t curve[32];
@@ -34,6 +40,10 @@ struct DisplayModel {
   UI3Model ui3;
 };
 
+// =========================
+// Screens
+// =========================
+
 void ui1_create();
 void ui2_create();
 void ui3_create();
@@ -43,21 +53,20 @@ void ui2_update(const DisplayModel& m);
 void ui3_update(const DisplayModel& m);
 
 // =========================
-// Softkey helpers (grafisch)
-// key_index: 1..5
+// UI helpers (softkey highlight + overlay)
 // =========================
-void ui1_set_softkey_highlight(uint8_t key_index, bool on);
-void ui2_set_softkey_highlight(uint8_t key_index, bool on);
-void ui3_set_softkey_highlight(uint8_t key_index, bool on);
 
-void ui1_set_softkey_text(uint8_t key_index, const char* text);
-void ui2_set_softkey_text(uint8_t key_index, const char* text);
-void ui3_set_softkey_text(uint8_t key_index, const char* text);
+// Softkeys zijn altijd 5 stuks (rechts naast het scherm)
+void ui1_softkey_set_active(int idx, bool active);
+void ui2_softkey_set_active(int idx, bool active);
+void ui3_softkey_set_active(int idx, bool active);
 
-// =========================
-// Overlay (klein kaartje in het midden)
-// =========================
-void ui_overlay_show(const char* title, const char* value, const char* hint);
-void ui_overlay_set_value(const char* value);
+void ui1_softkey_clear_all();
+void ui2_softkey_clear_all();
+void ui3_softkey_clear_all();
+
+// Overlay card (modal) in het midden (verschoven naar links vanwege sidebar)
+void ui_overlay_show(const char* title, const char* value_line, const char* hint_line);
+void ui_overlay_update(const char* title, const char* value_line, const char* hint_line);
 void ui_overlay_hide();
 bool ui_overlay_is_visible();

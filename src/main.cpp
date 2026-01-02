@@ -1,3 +1,4 @@
+// main.cpp (display-only test)
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -7,94 +8,117 @@
 #include "system/system.h"
 #include "display/display.h"
 
-// --- Zelfde bitmapping als display.cpp ---
-static constexpr uint32_t SOFT1 = (1u << 4);
-static constexpr uint32_t SOFT2 = (1u << 5);
-static constexpr uint32_t SOFT3 = (1u << 6);
-static constexpr uint32_t SOFT4 = (1u << 7);
-static constexpr uint32_t SOFT5 = (1u << 8);
-static constexpr uint32_t ENCP  = (1u << 9);
-static constexpr uint32_t ENCL  = (1u << 10);
+// Zelfde mapping als in display.cpp
+static constexpr uint32_t BTN_SOFT_1    = (1u << 4);
+static constexpr uint32_t BTN_SOFT_2    = (1u << 5);
+static constexpr uint32_t BTN_SOFT_3    = (1u << 6);
+static constexpr uint32_t BTN_SOFT_4    = (1u << 7);
+static constexpr uint32_t BTN_SOFT_5    = (1u << 8);
+static constexpr uint32_t BTN_ENC_PRESS = (1u << 10);
+static constexpr uint32_t BTN_ENC_LONG  = (1u << 11);
 
-static void sim_button_press(uint32_t bit)
+static void simulate_set_raw(uint32_t mask, bool down)
 {
   SystemSnapshot s;
   system_read_snapshot(&s);
 
   IOShared io = s.io;
-  io.buttons_raw_bits |= bit;
-  io.buttons_changed_bits |= bit;
+  const bool was = (io.buttons_raw_bits & mask) != 0;
+
+  if (down) io.buttons_raw_bits |= mask; else io.buttons_raw_bits &= ~mask;
+
+  // Changed bit alleen zetten als er daadwerkelijk een flank is
+  const bool now = down;
+  if (was != now) io.buttons_changed_bits |= mask;
+
   system_write_io_shared(&io);
 }
 
-static void sim_button_release(uint32_t bit)
+static void simulate_press(uint32_t mask, uint32_t hold_ms = 50)
+{
+  simulate_set_raw(mask, true);
+  vTaskDelay(pdMS_TO_TICKS(hold_ms));
+  simulate_set_raw(mask, false);
+}
+
+static void simulate_encoder_delta(int32_t steps)
 {
   SystemSnapshot s;
   system_read_snapshot(&s);
 
   IOShared io = s.io;
-  io.buttons_raw_bits &= ~bit;
-  io.buttons_changed_bits |= bit;
+  io.enc_delta_accum += steps;
   system_write_io_shared(&io);
 }
 
-static void sim_encoder_delta(int32_t delta)
+static void simulateUiTask(void* pv)
 {
-  SystemSnapshot s;
-  system_read_snapshot(&s);
+  (void)pv;
+  Serial.println("simulateUiTask started");
 
-  IOShared io = s.io;
-  io.enc_delta_accum += delta;
-  system_write_io_shared(&io);
-}
-
-static void simulateInputTask(void*)
-{
-  Serial.println("SIM_INPUT_TASK started");
-
-  // Zorg dat we in CONFIG staan (anders weigert display edits)
+  // Zorg dat we in CONFIG blijven en UI1 tonen
   {
     SystemSnapshot s;
     system_read_snapshot(&s);
+
     SystemStatus st = s.status;
     st.state = SYS_STATE_CONFIG;
+    st.mode_current = POWER_MODE_EMULATE;
+    st.mode_pending = POWER_MODE_EMULATE;
     system_write_status(&st);
+
+    UIShared ui = s.ui;
+    ui.active_screen = UI_SCREEN_EMULATE;
+    system_write_ui_shared(&ui);
   }
 
-  // Demo flow UI1
-  while (true)
+  vTaskDelay(pdMS_TO_TICKS(2000));
+
+  // 1) Choose Curve -> draai -> confirm
+  simulate_press(BTN_SOFT_1);
+  vTaskDelay(pdMS_TO_TICKS(800));
+  simulate_encoder_delta(+1);
+  vTaskDelay(pdMS_TO_TICKS(400));
+  simulate_encoder_delta(+1);
+  vTaskDelay(pdMS_TO_TICKS(400));
+  simulate_encoder_delta(+1);
+  vTaskDelay(pdMS_TO_TICKS(700));
+  simulate_press(BTN_ENC_PRESS);
+
+  vTaskDelay(pdMS_TO_TICKS(1500));
+
+  // 2) Nominal voltage -> draai -> confirm
+  simulate_press(BTN_SOFT_3);
+  vTaskDelay(pdMS_TO_TICKS(700));
+  simulate_encoder_delta(+50); // +5.0 V
+  vTaskDelay(pdMS_TO_TICKS(700));
+  simulate_press(BTN_ENC_PRESS);
+
+  vTaskDelay(pdMS_TO_TICKS(1500));
+
+  // 3) Capacity -> draai -> cancel
+  simulate_press(BTN_SOFT_4);
+  vTaskDelay(pdMS_TO_TICKS(700));
+  simulate_encoder_delta(+30); // +3.0 F
+  vTaskDelay(pdMS_TO_TICKS(700));
+  simulate_press(BTN_ENC_LONG, 600);
+
+  vTaskDelay(pdMS_TO_TICKS(1500));
+
+  // 4) Reset
+  simulate_press(BTN_SOFT_5);
+
+  // Herhaal langzaam
+  for (;;)
   {
-    // Choose Curve
-    sim_button_press(SOFT1); vTaskDelay(pdMS_TO_TICKS(120)); sim_button_release(SOFT1);
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_encoder_delta(+1);
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_button_press(ENCP); vTaskDelay(pdMS_TO_TICKS(80)); sim_button_release(ENCP);
+    vTaskDelay(pdMS_TO_TICKS(5000));
 
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    // Nominal voltage
-    sim_button_press(SOFT3); vTaskDelay(pdMS_TO_TICKS(120)); sim_button_release(SOFT3);
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_encoder_delta(+5); // +0.5V
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_button_press(ENCP); vTaskDelay(pdMS_TO_TICKS(80)); sim_button_release(ENCP);
-
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    // Capacity -> cancel
-    sim_button_press(SOFT4); vTaskDelay(pdMS_TO_TICKS(120)); sim_button_release(SOFT4);
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_encoder_delta(+10);
-    vTaskDelay(pdMS_TO_TICKS(300));
-    sim_button_press(ENCL); vTaskDelay(pdMS_TO_TICKS(80)); sim_button_release(ENCL);
-
-    vTaskDelay(pdMS_TO_TICKS(2500));
-
-    // Reset
-    sim_button_press(SOFT5); vTaskDelay(pdMS_TO_TICKS(120)); sim_button_release(SOFT5);
-
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    // Wissel curve nog eens
+    simulate_press(BTN_SOFT_1);
+    vTaskDelay(pdMS_TO_TICKS(700));
+    simulate_encoder_delta(+1);
+    vTaskDelay(pdMS_TO_TICKS(700));
+    simulate_press(BTN_ENC_PRESS);
   }
 }
 
@@ -102,18 +126,31 @@ void setup()
 {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n=== BOOT ===");
+  Serial.println("=== BOOT ===");
 
+  // I2C init (1x)
   Wire.begin(21, 19);
   Wire.setClock(400000);
 
   system_init();
 
-  // Display core 1 (stabieler)
-  xTaskCreatePinnedToCore(displayTask, "DISPLAY_TASK", 8192, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(
+      displayTask,
+      "DISPLAY_TASK",
+      8192,
+      nullptr,
+      1,
+      nullptr,
+      0);
 
-  // Sim input core 0
-  xTaskCreatePinnedToCore(simulateInputTask, "SIM_INPUT_TASK", 4096, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(
+      simulateUiTask,
+      "SIM_UI_TASK",
+      4096,
+      nullptr,
+      1,
+      nullptr,
+      1);
 
   Serial.println("setup done");
 }

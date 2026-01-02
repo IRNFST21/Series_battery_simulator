@@ -1,13 +1,15 @@
-// display_thread.cpp
+// display.cpp
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_AW9523.h>
 #include <lvgl.h>
+#include "esp_task_wdt.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "system/system.h"
+
 #include "display/ili9488_driver.hpp"
 #include "display/display.h"
 #include "display/ui_screens.hpp"
@@ -25,54 +27,21 @@ static ActiveUI current_ui = ActiveUI::UI1;
 // ---------------- MODEL ----------------
 static DisplayModel g_model;
 
-// ---------------- Input mapping (test) ----------------
-// bits 4-8: softkeys 1..5
-// bit 9   : encoder press (confirm)
-// bit 10  : encoder long press (cancel)
-static constexpr uint32_t BIT_SOFTKEY1  = (1u << 4);
-static constexpr uint32_t BIT_SOFTKEY2  = (1u << 5);
-static constexpr uint32_t BIT_SOFTKEY3  = (1u << 6);
-static constexpr uint32_t BIT_SOFTKEY4  = (1u << 7);
-static constexpr uint32_t BIT_SOFTKEY5  = (1u << 8);
-static constexpr uint32_t BIT_ENC_PRESS = (1u << 9);
-static constexpr uint32_t BIT_ENC_LONG  = (1u << 10);
+// ---------------- INPUT bit mapping (IOShared.buttons_*) ----------------
+// 0..3: mode/start-stop (wordt later door ControlTask verwerkt)
+// 4..8: soft-keys rechts naast het scherm
+// 10: encoder press (confirm)
+// 11: encoder long press (cancel)
+static constexpr uint32_t BTN_SOFT_1        = (1u << 4);
+static constexpr uint32_t BTN_SOFT_2        = (1u << 5);
+static constexpr uint32_t BTN_SOFT_3        = (1u << 6);
+static constexpr uint32_t BTN_SOFT_4        = (1u << 7);
+static constexpr uint32_t BTN_SOFT_5        = (1u << 8);
+static constexpr uint32_t BTN_ENC_PRESS     = (1u << 10);
+static constexpr uint32_t BTN_ENC_LONG      = (1u << 11);
 
-static constexpr uint32_t MASK_UI_KEYS =
-    BIT_SOFTKEY1 | BIT_SOFTKEY2 | BIT_SOFTKEY3 | BIT_SOFTKEY4 | BIT_SOFTKEY5 |
-    BIT_ENC_PRESS | BIT_ENC_LONG;
-
-// ---------------- Dummy curves (voor test) ----------------
-static const int16_t CURVE0[32] = {100,98,96,94,92,90,88,86,84,82,80,78,76,74,72,70,68,66,64,62,60,58,56,54,52,50,48,46,44,42,40,38};
-static const int16_t CURVE1[32] = {100,99,98,96,94,92,90,88,85,82,79,76,73,70,67,64,61,58,55,52,49,46,43,40,37,34,31,28,25,22,19,16};
-static const int16_t CURVE2[32] = {100,97,95,93,91,89,86,83,80,77,74,71,68,65,62,59,56,53,50,47,44,41,38,35,32,29,26,23,20,17,14,11};
-
-// ---------------- Local UI1 params (totdat system ze krijgt) ----------------
-static uint8_t ui1_start_index = 0;
-static float   ui1_nominal_v   = 12.0f; // 0..15, step 0.1
-static float   ui1_capacity    = 1.0f;  // >=0, step 0.1
-
-// Backups voor cancel (revert)
-static uint8_t bk_start_index = 0;
-static float   bk_nominal_v   = 12.0f;
-static float   bk_capacity    = 1.0f;
-static uint8_t bk_curve_id    = 0;
-
-// ---------------- Edit modes ----------------
-enum class EditMode : uint8_t {
-  VIEW = 0,
-  UI1_CURVE,
-  UI1_SETPOINT,
-  UI1_NOMINAL,
-  UI1_CAPACITY,
-
-  UI2_VOLTAGE,
-  UI2_ILIMIT,
-
-  UI3_AMPERE,
-  UI3_VLIMIT
-};
-
-static EditMode edit_mode = EditMode::VIEW;
+static constexpr uint32_t DISPLAY_BTN_MASK =
+    BTN_SOFT_1 | BTN_SOFT_2 | BTN_SOFT_3 | BTN_SOFT_4 | BTN_SOFT_5 | BTN_ENC_PRESS | BTN_ENC_LONG;
 
 // ---------------- BACKLIGHT INIT ----------------
 static void backlight_init_and_on()
@@ -115,10 +84,29 @@ static void lvgl_port_init()
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
   lv_display_set_flush_cb(disp, my_flush_cb);
 
+  // Partial buffer: let op stack/heap
   static const uint16_t DRAW_BUF_LINES = 10;
   static lv_color_t buf1[480 * DRAW_BUF_LINES];
   static lv_color_t buf2[480 * DRAW_BUF_LINES];
   lv_display_set_buffers(disp, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+}
+
+// ---------------- Curve select -> model ----------------
+static void select_curve_into_model(UI1Model& ui1, const SystemSnapshot& s)
+{
+  ui1.curve_len = (int)s.curves.len;
+  if (ui1.curve_len <= 0 || ui1.curve_len > CURVE_LEN) ui1.curve_len = CURVE_LEN;
+
+  const int16_t* src = s.curves.curve0;
+  if (s.ui.selected_curve_id == 1) src = s.curves.curve1;
+  else if (s.ui.selected_curve_id == 2) src = s.curves.curve2;
+
+  for (int i = 0; i < ui1.curve_len; ++i) ui1.curve[i] = src[i];
+
+  int idx = (int)s.ui.start_index;
+  if (idx < 0) idx = 0;
+  if (idx > ui1.curve_len - 1) idx = ui1.curve_len - 1;
+  ui1.progress_index = idx;
 }
 
 // ---------------- Mapping: SystemSnapshot -> DisplayModel ----------------
@@ -127,270 +115,450 @@ static void model_from_system(DisplayModel& m, const SystemSnapshot& s)
   const float vout = s.meas.v_out;
 
   float current = 0.0f;
-  if (s.status.mode_current == POWER_MODE_SINK)  current = s.meas.i_sink;
-  else                                          current = s.meas.i_source;
+  if (s.status.mode_current == POWER_MODE_SINK) current = s.meas.i_sink;
+  else current = s.meas.i_source; // SOURCE of EMULATE
 
-  // UI1 curve select
-  uint8_t cid = (uint8_t)(s.cfg.curve_id % 3);
-  const int16_t* src = (cid == 0) ? CURVE0 : (cid == 1) ? CURVE1 : CURVE2;
+  // UI1 (Emulate)
+  select_curve_into_model(m.ui1, s);
+  m.ui1.voltage_val      = vout;
+  m.ui1.current_val      = current;
+  m.ui1.runtime_sec      = (uint32_t)(millis() / 1000);
+  m.ui1.capacity_val     = s.ui.capacity_value;
+  m.ui1.state_load       = (s.status.mode_current == POWER_MODE_SINK);
+  m.ui1.nominal_v_val    = s.ui.nominal_voltage;
+  m.ui1.btn_capacity_val = s.ui.capacity_value;
 
-  m.ui1.curve_len = 32;
-  for (int i = 0; i < 32; ++i) m.ui1.curve[i] = src[i];
-
-  m.ui1.progress_index = (int)ui1_start_index;
-
-  m.ui1.voltage_val = vout;
-  m.ui1.current_val = current;
-  m.ui1.runtime_sec = (uint32_t)(millis() / 1000);
-
-  m.ui1.capacity_val     = ui1_capacity;
-  m.ui1.btn_capacity_val = ui1_capacity;
-  m.ui1.nominal_v_val    = ui1_nominal_v;
-
-  m.ui1.state_load = (s.status.mode_current == POWER_MODE_SINK);
-
-  // UI2 / UI3 (voorbereid)
-  m.ui2.set_voltage = s.cfg.set_voltage;
+  // UI2 (Const Source)
+  m.ui2.set_voltage = s.ui.ui2_set_voltage;
   m.ui2.meas_ampere = current;
-  m.ui2.vmax = 15.0f;
+  m.ui2.vmax        = 15.0f;
 
-  m.ui3.set_ampere = s.cfg.set_current;
+  // UI3 (Const Sink)
+  m.ui3.set_ampere   = s.ui.ui3_set_current;
   m.ui3.meas_voltage = vout;
-  m.ui3.imax = 10.0f;
+  m.ui3.imax         = 10.0f; // placeholder
 }
 
-// ---------------- Overlay helpers ----------------
-static void clear_softkey_highlights()
+// ---------------- UI create switch ----------------
+static void clear_all_softkeys()
 {
-  if (current_ui == ActiveUI::UI1) for (int i=1;i<=5;++i) ui1_set_softkey_highlight(i,false);
-  if (current_ui == ActiveUI::UI2) for (int i=1;i<=5;++i) ui2_set_softkey_highlight(i,false);
-  if (current_ui == ActiveUI::UI3) for (int i=1;i<=5;++i) ui3_set_softkey_highlight(i,false);
+  ui1_softkey_clear_all();
+  ui2_softkey_clear_all();
+  ui3_softkey_clear_all();
 }
 
-static void show_edit_overlay_for_mode(const SystemSnapshot& s)
+static void switch_ui_if_needed(UiScreen requested)
 {
-  char value[64];
+  ActiveUI desired = current_ui;
 
-  if (edit_mode == EditMode::UI1_CURVE) {
-    snprintf(value, sizeof(value), "Curve: %u", (unsigned)(s.cfg.curve_id % 3));
-    ui_overlay_show("Choose Curve", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui1_set_softkey_highlight(1, true);
-  }
-  else if (edit_mode == EditMode::UI1_SETPOINT) {
-    snprintf(value, sizeof(value), "Start index: %u", (unsigned)ui1_start_index);
-    ui_overlay_show("Choose Setpoint", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui1_set_softkey_highlight(2, true);
-  }
-  else if (edit_mode == EditMode::UI1_NOMINAL) {
-    snprintf(value, sizeof(value), "%.1f V", (double)ui1_nominal_v);
-    ui_overlay_show("Nominal voltage", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui1_set_softkey_highlight(3, true);
-  }
-  else if (edit_mode == EditMode::UI1_CAPACITY) {
-    snprintf(value, sizeof(value), "%.1f", (double)ui1_capacity);
-    ui_overlay_show("Capacity", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui1_set_softkey_highlight(4, true);
-  }
-  else if (edit_mode == EditMode::UI2_VOLTAGE) {
-    snprintf(value, sizeof(value), "%.1f V", (double)s.cfg.set_voltage);
-    ui_overlay_show("Set Voltage", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui2_set_softkey_highlight(1, true);
-  }
-  else if (edit_mode == EditMode::UI2_ILIMIT) {
-    snprintf(value, sizeof(value), "I-limit (TBD)");
-    ui_overlay_show("Current limit", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui2_set_softkey_highlight(2, true);
-  }
-  else if (edit_mode == EditMode::UI3_AMPERE) {
-    snprintf(value, sizeof(value), "%.1f A", (double)s.cfg.set_current);
-    ui_overlay_show("Set Ampere", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui3_set_softkey_highlight(1, true);
-  }
-  else if (edit_mode == EditMode::UI3_VLIMIT) {
-    snprintf(value, sizeof(value), "V-limit (TBD)");
-    ui_overlay_show("Voltage limit", value, "Rotate = change | Press = OK | Long = Cancel");
-    ui3_set_softkey_highlight(2, true);
-  }
-}
+  if (requested == UI_SCREEN_EMULATE) desired = ActiveUI::UI1;
+  else if (requested == UI_SCREEN_CONST_SOURCE) desired = ActiveUI::UI2;
+  else if (requested == UI_SCREEN_CONST_SINK) desired = ActiveUI::UI3;
+  else desired = ActiveUI::UI1;
 
-static void update_overlay_value_for_mode(const SystemSnapshot& s)
-{
-  char value[64];
+  if (desired == current_ui) return;
 
-  if (!ui_overlay_is_visible()) return;
-
-  if (edit_mode == EditMode::UI1_CURVE) {
-    snprintf(value, sizeof(value), "Curve: %u", (unsigned)(s.cfg.curve_id % 3));
-    ui_overlay_set_value(value);
-  }
-  else if (edit_mode == EditMode::UI1_SETPOINT) {
-    snprintf(value, sizeof(value), "Start index: %u", (unsigned)ui1_start_index);
-    ui_overlay_set_value(value);
-  }
-  else if (edit_mode == EditMode::UI1_NOMINAL) {
-    snprintf(value, sizeof(value), "%.1f V", (double)ui1_nominal_v);
-    ui_overlay_set_value(value);
-  }
-  else if (edit_mode == EditMode::UI1_CAPACITY) {
-    snprintf(value, sizeof(value), "%.1f", (double)ui1_capacity);
-    ui_overlay_set_value(value);
-  }
-  else if (edit_mode == EditMode::UI2_VOLTAGE) {
-    snprintf(value, sizeof(value), "%.1f V", (double)s.cfg.set_voltage);
-    ui_overlay_set_value(value);
-  }
-  else if (edit_mode == EditMode::UI3_AMPERE) {
-    snprintf(value, sizeof(value), "%.1f A", (double)s.cfg.set_current);
-    ui_overlay_set_value(value);
-  }
-}
-
-// ---------------- Input handling ----------------
-static void enter_edit(EditMode m, const SystemSnapshot& s)
-{
-  // backup voor cancel
-  bk_start_index = ui1_start_index;
-  bk_nominal_v   = ui1_nominal_v;
-  bk_capacity    = ui1_capacity;
-  bk_curve_id    = (uint8_t)(s.cfg.curve_id % 3);
-
-  edit_mode = m;
-
-  clear_softkey_highlights();
-  show_edit_overlay_for_mode(s);
-}
-
-static void cancel_edit(SystemSnapshot& s)
-{
-  // revert
-  ui1_start_index = bk_start_index;
-  ui1_nominal_v   = bk_nominal_v;
-  ui1_capacity    = bk_capacity;
-
-  ConfigData cfg = s.cfg;
-  cfg.curve_id = bk_curve_id;
-  system_write_config(&cfg);
-
-  edit_mode = EditMode::VIEW;
+  current_ui = desired;
+  clear_all_softkeys();
   ui_overlay_hide();
-  clear_softkey_highlights();
+
+  switch (current_ui) {
+    case ActiveUI::UI1: ui1_create(); break;
+    case ActiveUI::UI2: ui2_create(); break;
+    case ActiveUI::UI3: ui3_create(); break;
+  }
 }
 
-static void confirm_edit()
+// ---------------- Edit context ----------------
+enum class EditField : uint8_t
 {
-  edit_mode = EditMode::VIEW;
+  NONE = 0,
+  UI1_CURVE,
+  UI1_START_INDEX,
+  UI1_NOMINAL_V,
+  UI1_CAPACITY,
+  UI2_SET_V,
+  UI2_I_LIMIT,
+  UI3_SET_I,
+  UI3_V_LIMIT,
+};
+
+static EditField g_edit_field = EditField::NONE;
+static int g_edit_softkey_idx = -1; // 0..4
+
+// backups per edit (zodat cancel targetgericht kan terugzetten)
+static uint8_t g_bak_u8 = 0;
+static float   g_bak_f1 = 0.0f;
+
+static UiEditField map_edit_field(EditField f)
+{
+  switch (f)
+  {
+    case EditField::UI1_CURVE:       return UI_EDIT_UI1_CURVE;
+    case EditField::UI1_START_INDEX: return UI_EDIT_UI1_START_INDEX;
+    case EditField::UI1_NOMINAL_V:   return UI_EDIT_UI1_NOMINAL_V;
+    case EditField::UI1_CAPACITY:    return UI_EDIT_UI1_CAPACITY;
+    case EditField::UI2_SET_V:       return UI_EDIT_UI2_SET_V;
+    case EditField::UI2_I_LIMIT:     return UI_EDIT_UI2_I_LIMIT;
+    case EditField::UI3_SET_I:       return UI_EDIT_UI3_SET_I;
+    case EditField::UI3_V_LIMIT:     return UI_EDIT_UI3_V_LIMIT;
+    default:                         return UI_EDIT_NONE;
+  }
+}
+
+static void begin_edit(EditField field, int softkey_idx, const SystemSnapshot& s)
+{
+  g_edit_field = field;
+  g_edit_softkey_idx = softkey_idx;
+
+  // Backup wat we gaan aanpassen
+  switch (field)
+  {
+    case EditField::UI1_CURVE:       g_bak_u8 = s.ui.selected_curve_id; break;
+    case EditField::UI1_START_INDEX: g_bak_u8 = s.ui.start_index; break;
+    case EditField::UI1_NOMINAL_V:   g_bak_f1 = s.ui.nominal_voltage; break;
+    case EditField::UI1_CAPACITY:    g_bak_f1 = s.ui.capacity_value; break;
+    case EditField::UI2_SET_V:       g_bak_f1 = s.ui.ui2_set_voltage; break;
+    case EditField::UI2_I_LIMIT:     g_bak_f1 = s.ui.ui2_current_limit; break;
+    case EditField::UI3_SET_I:       g_bak_f1 = s.ui.ui3_set_current; break;
+    case EditField::UI3_V_LIMIT:     g_bak_f1 = s.ui.ui3_voltage_limit; break;
+    default: break;
+  }
+
+  // UI highlight
+  clear_all_softkeys();
+  if (current_ui == ActiveUI::UI1) ui1_softkey_set_active(softkey_idx, true);
+  if (current_ui == ActiveUI::UI2) ui2_softkey_set_active(softkey_idx, true);
+  if (current_ui == ActiveUI::UI3) ui3_softkey_set_active(softkey_idx, true);
+
+  // Overlay
+  const char* hint = "Draai: wijzig | Press: OK | Long: Cancel";
+  char title[32];
+  char value[48];
+  title[0] = 0; value[0] = 0;
+
+  switch (field)
+  {
+    case EditField::UI1_CURVE:
+      snprintf(title, sizeof(title), "Choose Curve");
+      snprintf(value, sizeof(value), "Curve: %u", (unsigned)s.ui.selected_curve_id);
+      break;
+    case EditField::UI1_START_INDEX:
+      snprintf(title, sizeof(title), "Choose Setpoint");
+      snprintf(value, sizeof(value), "Start index: %u", (unsigned)s.ui.start_index);
+      break;
+    case EditField::UI1_NOMINAL_V:
+      snprintf(title, sizeof(title), "Nominal voltage");
+      snprintf(value, sizeof(value), "%.1f V", (double)s.ui.nominal_voltage);
+      break;
+    case EditField::UI1_CAPACITY:
+      snprintf(title, sizeof(title), "Capacity");
+      snprintf(value, sizeof(value), "%.1f F", (double)s.ui.capacity_value);
+      break;
+    case EditField::UI2_SET_V:
+      snprintf(title, sizeof(title), "Voltage");
+      snprintf(value, sizeof(value), "%.1f V", (double)s.ui.ui2_set_voltage);
+      break;
+    case EditField::UI2_I_LIMIT:
+      snprintf(title, sizeof(title), "Current limit");
+      snprintf(value, sizeof(value), "%.1f A", (double)s.ui.ui2_current_limit);
+      break;
+    case EditField::UI3_SET_I:
+      snprintf(title, sizeof(title), "Ampere");
+      snprintf(value, sizeof(value), "%.1f A", (double)s.ui.ui3_set_current);
+      break;
+    case EditField::UI3_V_LIMIT:
+      snprintf(title, sizeof(title), "Voltage limit");
+      snprintf(value, sizeof(value), "%.1f V", (double)s.ui.ui3_voltage_limit);
+      break;
+    default:
+      snprintf(title, sizeof(title), "Edit");
+      snprintf(value, sizeof(value), "");
+      break;
+  }
+
+  ui_overlay_show(title, value, hint);
+
+  // event naar ControlTask (later)
+  UIEvents ev = s.ui_events;
+  ev.flags |= UI_EVT_EDIT_STARTED;
+  ev.field = map_edit_field(field);
+  ev.seq++;
+  system_write_ui_events(&ev);
+}
+
+static void end_edit(bool keep_values, const SystemSnapshot& s)
+{
+  // Revert indien cancel
+  if (!keep_values)
+  {
+    UIShared ui = s.ui;
+    switch (g_edit_field)
+    {
+      case EditField::UI1_CURVE:       ui.selected_curve_id = g_bak_u8; break;
+      case EditField::UI1_START_INDEX: ui.start_index       = g_bak_u8; break;
+      case EditField::UI1_NOMINAL_V:   ui.nominal_voltage   = g_bak_f1; break;
+      case EditField::UI1_CAPACITY:    ui.capacity_value    = g_bak_f1; break;
+      case EditField::UI2_SET_V:       ui.ui2_set_voltage   = g_bak_f1; break;
+      case EditField::UI2_I_LIMIT:     ui.ui2_current_limit = g_bak_f1; break;
+      case EditField::UI3_SET_I:       ui.ui3_set_current   = g_bak_f1; break;
+      case EditField::UI3_V_LIMIT:     ui.ui3_voltage_limit = g_bak_f1; break;
+      default: break;
+    }
+    system_write_ui_shared(&ui);
+
+    UIEvents ev = s.ui_events;
+    ev.flags |= UI_EVT_EDIT_CANCELLED;
+    ev.field = map_edit_field(g_edit_field);
+    ev.seq++;
+    system_write_ui_events(&ev);
+  }
+  else
+  {
+    UIEvents ev = s.ui_events;
+    ev.flags |= UI_EVT_EDIT_CONFIRMED;
+    ev.field = map_edit_field(g_edit_field);
+    ev.seq++;
+    system_write_ui_events(&ev);
+  }
+
+  g_edit_field = EditField::NONE;
+  g_edit_softkey_idx = -1;
+
+  clear_all_softkeys();
   ui_overlay_hide();
-  clear_softkey_highlights();
 }
 
-static void apply_encoder_delta(SystemSnapshot& s, int32_t delta)
+static float clampf(float v, float lo, float hi)
 {
-  if (delta == 0) return;
-
-  if (edit_mode == EditMode::UI1_CURVE) {
-    int v = (int)(s.cfg.curve_id % 3) + (delta > 0 ? 1 : -1);
-    if (v < 0) v = 0;
-    if (v > 2) v = 2;
-    ConfigData cfg = s.cfg;
-    cfg.curve_id = (uint8_t)v;
-    system_write_config(&cfg);
-  }
-  else if (edit_mode == EditMode::UI1_SETPOINT) {
-    int v = (int)ui1_start_index + delta;
-    if (v < 0) v = 0;
-    if (v > 31) v = 31;
-    ui1_start_index = (uint8_t)v;
-  }
-  else if (edit_mode == EditMode::UI1_NOMINAL) {
-    float v = ui1_nominal_v + 0.1f * (float)delta;
-    if (v < 0.0f) v = 0.0f;
-    if (v > 15.0f) v = 15.0f;
-    ui1_nominal_v = v;
-  }
-  else if (edit_mode == EditMode::UI1_CAPACITY) {
-    float v = ui1_capacity + 0.1f * (float)delta;
-    if (v < 0.0f) v = 0.0f;
-    ui1_capacity = v;
-  }
-  else if (edit_mode == EditMode::UI2_VOLTAGE) {
-    float v = s.cfg.set_voltage + 0.1f * (float)delta;
-    if (v < 0.0f) v = 0.0f;
-    if (v > 15.0f) v = 15.0f;
-    ConfigData cfg = s.cfg;
-    cfg.set_voltage = v;
-    system_write_config(&cfg);
-  }
-  else if (edit_mode == EditMode::UI3_AMPERE) {
-    float v = s.cfg.set_current + 0.1f * (float)delta;
-    if (v < 0.0f) v = 0.0f;
-    ConfigData cfg = s.cfg;
-    cfg.set_current = v;
-    system_write_config(&cfg);
-  }
-
-  // Overlay live updaten
-  SystemSnapshot s2;
-  system_read_snapshot(&s2);
-  update_overlay_value_for_mode(s2);
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
 
-static void handle_inputs()
+static void update_overlay_value(EditField field, const UIShared& ui)
 {
-  SystemSnapshot s;
-  system_read_snapshot(&s);
+  const char* hint = "Draai: wijzig | Press: OK | Long: Cancel";
+  char title[32];
+  char value[48];
+  title[0] = 0; value[0] = 0;
 
-  // Alleen in CONFIG aanpassen (jouw eis)
-  if (s.status.state != SYS_STATE_CONFIG) return;
+  switch (field)
+  {
+    case EditField::UI1_CURVE:
+      snprintf(title, sizeof(title), "Choose Curve");
+      snprintf(value, sizeof(value), "Curve: %u", (unsigned)ui.selected_curve_id);
+      break;
+    case EditField::UI1_START_INDEX:
+      snprintf(title, sizeof(title), "Choose Setpoint");
+      snprintf(value, sizeof(value), "Start index: %u", (unsigned)ui.start_index);
+      break;
+    case EditField::UI1_NOMINAL_V:
+      snprintf(title, sizeof(title), "Nominal voltage");
+      snprintf(value, sizeof(value), "%.1f V", (double)ui.nominal_voltage);
+      break;
+    case EditField::UI1_CAPACITY:
+      snprintf(title, sizeof(title), "Capacity");
+      snprintf(value, sizeof(value), "%.1f F", (double)ui.capacity_value);
+      break;
+    case EditField::UI2_SET_V:
+      snprintf(title, sizeof(title), "Voltage");
+      snprintf(value, sizeof(value), "%.1f V", (double)ui.ui2_set_voltage);
+      break;
+    case EditField::UI2_I_LIMIT:
+      snprintf(title, sizeof(title), "Current limit");
+      snprintf(value, sizeof(value), "%.1f A", (double)ui.ui2_current_limit);
+      break;
+    case EditField::UI3_SET_I:
+      snprintf(title, sizeof(title), "Ampere");
+      snprintf(value, sizeof(value), "%.1f A", (double)ui.ui3_set_current);
+      break;
+    case EditField::UI3_V_LIMIT:
+      snprintf(title, sizeof(title), "Voltage limit");
+      snprintf(value, sizeof(value), "%.1f V", (double)ui.ui3_voltage_limit);
+      break;
+    default:
+      return;
+  }
 
-  const uint32_t changed = s.io.buttons_changed_bits;
-  const uint32_t raw     = s.io.buttons_raw_bits;
+  ui_overlay_update(title, value, hint);
+}
 
-  const bool soft1 = (changed & BIT_SOFTKEY1) && (raw & BIT_SOFTKEY1);
-  const bool soft2 = (changed & BIT_SOFTKEY2) && (raw & BIT_SOFTKEY2);
-  const bool soft3 = (changed & BIT_SOFTKEY3) && (raw & BIT_SOFTKEY3);
-  const bool soft4 = (changed & BIT_SOFTKEY4) && (raw & BIT_SOFTKEY4);
-  const bool soft5 = (changed & BIT_SOFTKEY5) && (raw & BIT_SOFTKEY5);
+static void do_reset_for_current_ui(const SystemSnapshot& s)
+{
+  UIShared ui = s.ui;
+  switch (current_ui)
+  {
+    case ActiveUI::UI1:
+      ui.selected_curve_id = 0;
+      ui.start_index = 0;
+      ui.nominal_voltage = 0.0f;
+      ui.capacity_value = 0.0f;
+      break;
+    case ActiveUI::UI2:
+      ui.ui2_set_voltage = 0.0f;
+      ui.ui2_current_limit = 0.0f;
+      break;
+    case ActiveUI::UI3:
+      ui.ui3_set_current = 0.0f;
+      ui.ui3_voltage_limit = 0.0f;
+      break;
+  }
 
-  const bool enc_press = (changed & BIT_ENC_PRESS) && (raw & BIT_ENC_PRESS);
-  const bool enc_long  = (changed & BIT_ENC_LONG)  && (raw & BIT_ENC_LONG);
+  system_write_ui_shared(&ui);
 
-  const int32_t delta = s.io.enc_delta_accum;
+  UIEvents ev = s.ui_events;
+  ev.flags |= UI_EVT_RESET_REQUESTED;
+  ev.field = UI_EDIT_NONE;
+  ev.seq++;
+  system_write_ui_events(&ev);
+}
 
-  // Cancel / confirm
-  if (enc_long && edit_mode != EditMode::VIEW) cancel_edit(s);
-  if (enc_press && edit_mode != EditMode::VIEW) confirm_edit();
+static bool pressed(uint32_t changed_bits, uint32_t raw_bits, uint32_t mask)
+{
+  return (changed_bits & mask) && (raw_bits & mask);
+}
 
-  // Softkeys (UI1 actief in jouw test)
-  if (current_ui == ActiveUI::UI1) {
-    if (soft1) enter_edit(EditMode::UI1_CURVE, s);
-    if (soft2) enter_edit(EditMode::UI1_SETPOINT, s);
-    if (soft3) enter_edit(EditMode::UI1_NOMINAL, s);
-    if (soft4) enter_edit(EditMode::UI1_CAPACITY, s);
+static void handle_inputs(const SystemSnapshot& s)
+{
+  // Alleen in CONFIG nemen we UI-input over
+  if (s.status.state != SYS_STATE_CONFIG)
+  {
+    if (g_edit_field != EditField::NONE)
+      end_edit(true, s);
+    return;
+  }
 
-    if (soft5) {
-      // Reset
-      ui1_start_index = 0;
-      ui1_nominal_v   = 12.0f;
-      ui1_capacity    = 1.0f;
+  const uint32_t changed = s.io.buttons_changed_bits & DISPLAY_BTN_MASK;
+  const uint32_t raw     = s.io.buttons_raw_bits & DISPLAY_BTN_MASK;
+  const int32_t  enc_delta = s.io.enc_delta_accum;
 
-      ConfigData cfg = s.cfg;
-      cfg.curve_id = 0;
-      system_write_config(&cfg);
+  const bool soft1 = pressed(changed, raw, BTN_SOFT_1);
+  const bool soft2 = pressed(changed, raw, BTN_SOFT_2);
+  const bool soft3 = pressed(changed, raw, BTN_SOFT_3);
+  const bool soft4 = pressed(changed, raw, BTN_SOFT_4);
+  const bool soft5 = pressed(changed, raw, BTN_SOFT_5);
 
-      edit_mode = EditMode::VIEW;
-      ui_overlay_hide();
-      clear_softkey_highlights();
+  const bool enc_press = pressed(changed, raw, BTN_ENC_PRESS);
+  const bool enc_long  = pressed(changed, raw, BTN_ENC_LONG);
+
+  // 1) Start edit als we nog niet editten
+  if (g_edit_field == EditField::NONE)
+  {
+    if (soft5) { do_reset_for_current_ui(s); }
+
+    if (current_ui == ActiveUI::UI1)
+    {
+      if (soft1) begin_edit(EditField::UI1_CURVE, 0, s);
+      else if (soft2) begin_edit(EditField::UI1_START_INDEX, 1, s);
+      else if (soft3) begin_edit(EditField::UI1_NOMINAL_V, 2, s);
+      else if (soft4) begin_edit(EditField::UI1_CAPACITY, 3, s);
+    }
+    else if (current_ui == ActiveUI::UI2)
+    {
+      if (soft1) begin_edit(EditField::UI2_SET_V, 0, s);
+      else if (soft2) begin_edit(EditField::UI2_I_LIMIT, 1, s);
+    }
+    else if (current_ui == ActiveUI::UI3)
+    {
+      if (soft1) begin_edit(EditField::UI3_SET_I, 0, s);
+      else if (soft2) begin_edit(EditField::UI3_V_LIMIT, 1, s);
+    }
+  }
+  else
+  {
+    // 2) Cancel/Confirm
+    if (enc_long) {
+      end_edit(false, s);
+    } else if (enc_press) {
+      end_edit(true, s);
+    } else if (enc_delta != 0) {
+      // 3) Encoder adjust
+      UIShared ui = s.ui;
+      bool changed_any = false;
+
+      switch (g_edit_field)
+      {
+        case EditField::UI1_CURVE:
+        {
+          int v = (int)ui.selected_curve_id + (enc_delta > 0 ? 1 : -1);
+          if (v < 0) v = 2;
+          if (v > 2) v = 0;
+          ui.selected_curve_id = (uint8_t)v;
+          changed_any = true;
+        } break;
+
+        case EditField::UI1_START_INDEX:
+        {
+          int v = (int)ui.start_index + enc_delta;
+          if (v < 0) v = 0;
+          if (v > (CURVE_LEN - 1)) v = (CURVE_LEN - 1);
+          ui.start_index = (uint8_t)v;
+          changed_any = true;
+        } break;
+
+        case EditField::UI1_NOMINAL_V:
+        {
+          float v = ui.nominal_voltage + 0.1f * (float)enc_delta;
+          ui.nominal_voltage = clampf(v, 0.0f, 15.0f);
+          changed_any = true;
+        } break;
+
+        case EditField::UI1_CAPACITY:
+        {
+          float v = ui.capacity_value + 0.1f * (float)enc_delta;
+          ui.capacity_value = clampf(v, 0.0f, 9999.9f);
+          changed_any = true;
+        } break;
+
+        case EditField::UI2_SET_V:
+        {
+          float v = ui.ui2_set_voltage + 0.1f * (float)enc_delta;
+          ui.ui2_set_voltage = clampf(v, 0.0f, 15.0f);
+          changed_any = true;
+        } break;
+
+        case EditField::UI2_I_LIMIT:
+        {
+          float v = ui.ui2_current_limit + 0.1f * (float)enc_delta;
+          ui.ui2_current_limit = clampf(v, 0.0f, 10.0f);
+          changed_any = true;
+        } break;
+
+        case EditField::UI3_SET_I:
+        {
+          float v = ui.ui3_set_current + 0.1f * (float)enc_delta;
+          ui.ui3_set_current = clampf(v, 0.0f, 10.0f);
+          changed_any = true;
+        } break;
+
+        case EditField::UI3_V_LIMIT:
+        {
+          float v = ui.ui3_voltage_limit + 0.1f * (float)enc_delta;
+          ui.ui3_voltage_limit = clampf(v, 0.0f, 15.0f);
+          changed_any = true;
+        } break;
+
+        default: break;
+      }
+
+      if (changed_any)
+      {
+        system_write_ui_shared(&ui);
+        update_overlay_value(g_edit_field, ui);
+
+        UIEvents ev = s.ui_events;
+        ev.flags |= UI_EVT_PARAM_CHANGED;
+        ev.field = map_edit_field(g_edit_field);
+        ev.seq++;
+        system_write_ui_events(&ev);
+      }
     }
   }
 
-  // Encoder delta
-  if (edit_mode != EditMode::VIEW) {
-    apply_encoder_delta(s, delta);
-  }
-
-  // Ack events
-  if (changed & MASK_UI_KEYS) system_io_clear_buttons_changed(MASK_UI_KEYS);
-  if (delta != 0) system_io_clear_enc_delta();
+  // Consume inputs die display verwerkt
+  if (changed) system_io_clear_buttons_changed(DISPLAY_BTN_MASK);
+  if (enc_delta != 0) system_io_clear_enc_delta();
 }
 
 // ---------------- Task ----------------
@@ -405,16 +573,18 @@ void displayTask(void* pvParameters)
   lv_init();
   lvgl_port_init();
 
-  // Start met UI1
+  // Start UI1
   current_ui = ActiveUI::UI1;
   ui1_create();
 
-  const TickType_t period = pdMS_TO_TICKS(100); // rustig
+  const TickType_t period = pdMS_TO_TICKS(50); // 20 Hz
   TickType_t lastWake = xTaskGetTickCount();
+
   uint32_t last_lv_tick_ms = millis();
 
   while (true)
   {
+    // LVGL tick
     uint32_t now_ms = millis();
     uint32_t dt = now_ms - last_lv_tick_ms;
     last_lv_tick_ms = now_ms;
@@ -422,19 +592,27 @@ void displayTask(void* pvParameters)
     lv_tick_inc(dt);
     lv_timer_handler();
 
-    // Inputs (softkeys + encoder) -> overlay + highlights + config writes
-    handle_inputs();
+    esp_task_wdt_reset();
 
-    // Update UI data
+    // Snapshot
     SystemSnapshot sys;
     system_read_snapshot(&sys);
+
+    // UI switch op basis van system.ui.active_screen
+    switch_ui_if_needed(sys.ui.active_screen);
+
+    // Inputs verwerken (alleen in CONFIG)
+    handle_inputs(sys);
+
+    // model vullen + UI updaten
     model_from_system(g_model, sys);
 
-    // In jouw test nog altijd UI1
-    ui1_update(g_model);
+    switch (current_ui) {
+      case ActiveUI::UI1: ui1_update(g_model); break;
+      case ActiveUI::UI2: ui2_update(g_model); break;
+      case ActiveUI::UI3: ui3_update(g_model); break;
+    }
 
-    // yield (WDT vriendelijk)
-    vTaskDelay(1);
     vTaskDelayUntil(&lastWake, period);
   }
 }
