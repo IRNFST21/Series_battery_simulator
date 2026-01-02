@@ -4,6 +4,7 @@
 #include <Adafruit_AW9523.h>
 #include <lvgl.h>
 #include "esp_task_wdt.h"
+#include <esp_heap_caps.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -77,18 +78,51 @@ static void my_flush_cb(lv_display_t* disp_drv, const lv_area_t* area, uint8_t* 
 
 static void lvgl_port_init()
 {
+  Serial.println("lvgl_port_init: start");
+
   const uint16_t hor_res = 480;
   const uint16_t ver_res = 320;
 
   disp = lv_display_create(hor_res, ver_res);
+  if (!disp) {
+    Serial.println("ERROR: lv_display_create failed");
+    return;
+  }
+
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
   lv_display_set_flush_cb(disp, my_flush_cb);
 
-  // Partial buffer: let op stack/heap
+  // ---- Draw buffers (RGB565 => 2 bytes/pixel) ----
   static const uint16_t DRAW_BUF_LINES = 10;
-  static lv_color_t buf1[480 * DRAW_BUF_LINES];
-  static lv_color_t buf2[480 * DRAW_BUF_LINES];
-  lv_display_set_buffers(disp, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+  const size_t buf_pixels = (size_t)hor_res * (size_t)DRAW_BUF_LINES;
+  const size_t buf_bytes  = buf_pixels * 2; // RGB565
+
+  // 32-byte aligned + DMA-capable (veiligste keuze op ESP32 voor SPI flush)
+  uint16_t* buf1 = (uint16_t*)heap_caps_aligned_alloc(32, buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  uint16_t* buf2 = (uint16_t*)heap_caps_aligned_alloc(32, buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+
+  Serial.printf("buf_bytes=%u heap=%lu buf1=%p buf2=%p\n",
+                (unsigned)buf_bytes, (unsigned long)ESP.getFreeHeap(), buf1, buf2);
+
+  if (!buf1 || !buf2) {
+    Serial.println("ERROR: draw buffer alloc failed");
+    if (buf1) heap_caps_free(buf1);
+    if (buf2) heap_caps_free(buf2);
+    return;
+  }
+
+  Serial.println("lvgl_port_init: before set_buffers");
+
+  lv_display_set_buffers(
+      disp,
+      buf1,
+      buf2,
+      buf_bytes,                        // SIZE IN BYTES
+      LV_DISPLAY_RENDER_MODE_PARTIAL
+  );
+
+  Serial.println("lvgl_port_init: after set_buffers");
+  Serial.println("lvgl_port_init: done");
 }
 
 // ---------------- Curve select -> model ----------------
@@ -570,8 +604,25 @@ void displayTask(void* pvParameters)
   backlight_init_and_on();
   ili9488_init();
 
+  Serial.println("LVGL init start");
+
   lv_init();
+
+  Serial.println("LVGL port init");
+
   lvgl_port_init();
+
+  Serial.println("LVGL first screen");
+
+  lv_obj_t* scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0xFF0000), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_t* t = lv_label_create(scr);
+  lv_label_set_text(t, "LVGL OK");
+  lv_obj_align(t, LV_ALIGN_CENTER, 0, 0);
+  lv_refr_now(disp);          // force immediate refresh
+
+  Serial.println("LVGL init done");
 
   // Start UI1
   current_ui = ActiveUI::UI1;
@@ -591,6 +642,8 @@ void displayTask(void* pvParameters)
 
     lv_tick_inc(dt);
     lv_timer_handler();
+    //vTaskDelay(1);
+
 
     esp_task_wdt_reset();
 
@@ -612,6 +665,12 @@ void displayTask(void* pvParameters)
       case ActiveUI::UI2: ui2_update(g_model); break;
       case ActiveUI::UI3: ui3_update(g_model); break;
     }
+    static uint32_t lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Serial.println("display loop alive");
+  }
+
 
     vTaskDelayUntil(&lastWake, period);
   }

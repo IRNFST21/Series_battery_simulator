@@ -30,17 +30,14 @@ static lv_obj_t* ov_value = nullptr;
 static lv_obj_t* ov_hint  = nullptr;
 
 // Reserveer rechts ruimte voor 5 knoppen kolom (sidebar).
-// Jouw sidebar = 120px breed + ~10px "lucht" (marge/padding/veiligheid).
+// sidebar = 120px + marge
 static constexpr int UI_RIGHT_RESERVED_PX = 130;
-
-// Card offset: center van card komt in het "left content area"
-// Offset = -(reserved/2)
 static constexpr int OVERLAY_X_OFFSET = -(UI_RIGHT_RESERVED_PX / 2);
 static constexpr int OVERLAY_Y_OFFSET = 0;
 
 static void overlay_ensure_created()
 {
-    // Belangrijk: TOP LAYER, zodat overlay altijd vóór alles staat
+    // TOP LAYER, zodat overlay altijd vóór alles staat
     lv_obj_t* top = lv_layer_top();
     if (ov_root && lv_obj_get_parent(ov_root) == top) return;
 
@@ -102,7 +99,7 @@ void ui_overlay_show(const char* title, const char* value, const char* hint)
 {
     overlay_ensure_created();
 
-    // Forceer foreground op top-layer (zekerheid)
+    // Zekerheid: overlay naar voorgrond
     if (ov_root) lv_obj_move_foreground(ov_root);
 
     if (ov_title && title) lv_label_set_text(ov_title, title);
@@ -110,6 +107,25 @@ void ui_overlay_show(const char* title, const char* value, const char* hint)
     if (ov_hint  && hint)  lv_label_set_text(ov_hint, hint);
 
     if (ov_root) lv_obj_clear_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
+}
+
+// === FIX: display.cpp verwacht ui_overlay_update(...) ===
+// We verwijderen niks; we voegen dit toe.
+void ui_overlay_update(const char* title, const char* value, const char* hint)
+{
+    overlay_ensure_created();
+
+    // Als hij nog verborgen is, behandel update als show
+    if (ov_root && lv_obj_has_flag(ov_root, LV_OBJ_FLAG_HIDDEN)) {
+        ui_overlay_show(title, value, hint);
+        return;
+    }
+
+    // Anders: alleen teksten bijwerken
+    if (ov_root) lv_obj_move_foreground(ov_root);
+    if (ov_title && title) lv_label_set_text(ov_title, title);
+    if (ov_value && value) lv_label_set_text(ov_value, value);
+    if (ov_hint  && hint)  lv_label_set_text(ov_hint, hint);
 }
 
 void ui_overlay_set_value(const char* value)
@@ -174,184 +190,17 @@ static lv_obj_t* ui1_btn_nominal_v     = nullptr;
 static lv_obj_t* ui1_btn_capacity      = nullptr;
 static lv_obj_t* ui1_btn_reset         = nullptr;
 
-// labels ín de knoppen (voor dynamische tekst)
-static lv_obj_t* ui1_lbl_btn_nominal_v = nullptr;
-static lv_obj_t* ui1_lbl_btn_capacity  = nullptr;
-
-// UI1 softkey arrays (1..5)
+// labels ín de knoppen (kind 0 is label)
 static lv_obj_t* ui1_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 static lv_obj_t* ui1_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 
-// lijn in de grafiek
-static lv_obj_t* ui1_progress_line     = nullptr;
-static lv_point_precise_t ui1_progress_pts[2];
-
-// helper: verticale lijnpositie updaten op basis van model.ui1.progress_index + curve
-static void ui1_update_progress_line(const DisplayModel& m)
+static lv_obj_t* make_btn(lv_obj_t* parent, const char* txt)
 {
-    if (!ui1_chart || !ui1_progress_line) return;
+    lv_obj_t* btn = lv_btn_create(parent);
 
-    const int point_count = m.ui1.curve_len;
-    if (point_count <= 1) return;
-
-    int idx = m.ui1.progress_index;
-    if (idx < 0) idx = 0;
-    if (idx > point_count - 1) idx = point_count - 1;
-
-    int graph_width  = lv_obj_get_width(ui1_chart);
-    int graph_height = lv_obj_get_height(ui1_chart);
-    if (graph_width <= 1 || graph_height <= 1) return;
-
-    // X-positie over de breedte van de chart
-    int x = (graph_width - 1) * idx / (point_count - 1);
-
-    // Waarde (0..100) uit de curve
-    int16_t v = m.ui1.curve[idx];
-
-    // Map waarde naar pixel (0 = boven, graph_height-1 = onder)
-    int y_curve = (graph_height - 1) - (graph_height - 1) * v / 100;
-
-    // Lijn van onderkant chart tot aan de curve
-    ui1_progress_pts[0].x = x;
-    ui1_progress_pts[0].y = graph_height - 2;   // net boven onderste rand
-    ui1_progress_pts[1].x = x;
-    ui1_progress_pts[1].y = y_curve;
-
-    lv_line_set_points(ui1_progress_line, ui1_progress_pts, 2);
-}
-
-void ui1_create() {
-  lv_obj_t* scr = lv_screen_active();
-  lv_obj_clean(scr);
-
-  overlay_ensure_created(); // overlay opnieuw aan huidige screen hangen (verborgen)
-
-  // -------- achtergrond / hoofdvlak --------
-  lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
-
-  // Titel bovenaan
-  lv_obj_t* title = lv_label_create(scr);
-  lv_label_set_text(title, "Emulate");
-  lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
-
-  // -------- linker inhoudsgebied (grafiek + info) --------
-  const int left_margin   = 30;
-  const int top_margin    = 25;
-  const int graph_width   = 310;
-  const int graph_height  = 180;
-
-  ui1_chart = lv_chart_create(scr);
-  lv_obj_set_size(ui1_chart, graph_width, graph_height);
-  lv_obj_align(ui1_chart, LV_ALIGN_TOP_LEFT, left_margin, top_margin);
-
-  lv_obj_clear_flag(ui1_chart, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_scrollbar_mode(ui1_chart, LV_SCROLLBAR_MODE_OFF);
-
-  lv_chart_set_type(ui1_chart, LV_CHART_TYPE_LINE);
-  lv_chart_set_range(ui1_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-  lv_chart_set_point_count(ui1_chart, 32);
-
-  lv_obj_set_style_bg_color(ui1_chart, lv_color_hex(UI_COL_CHART_BG), LV_PART_MAIN);
-  lv_obj_set_style_border_color(ui1_chart, lv_color_hex(UI_COL_CHART_BORDER), LV_PART_MAIN);
-  lv_obj_set_style_border_width(ui1_chart, 1, LV_PART_MAIN);
-
-  // Discharge-curve data (wordt gezet in ui1_update op basis van model)
-  ui1_series = lv_chart_add_series(ui1_chart,
-                                   lv_color_hex(UI_COL_CHART_SERIES),
-                                   LV_CHART_AXIS_PRIMARY_Y);
-
-  for (int i = 0; i < 32; ++i) {
-    lv_chart_set_value_by_id(ui1_chart, ui1_series, i, 0);
-  }
-  lv_chart_refresh(ui1_chart);
-
-  // Verticale “cursor”-lijn
-  ui1_progress_line = lv_line_create(ui1_chart);
-  lv_obj_set_style_line_color(ui1_progress_line, lv_color_hex(UI_COL_CHART_LINE), 0);
-  lv_obj_set_style_line_width(ui1_progress_line, 2, 0);
-  lv_obj_set_style_line_dash_width(ui1_progress_line, 6, 0);
-  lv_obj_set_style_line_dash_gap(ui1_progress_line, 4, 0);
-
-  // As-labels
-  lv_obj_t* lbl_x = lv_label_create(scr);
-  lv_label_set_text(lbl_x, "Capacity ->");
-  lv_obj_set_style_text_color(lbl_x, lv_color_hex(UI_COL_AXIS_TEXT), 0);
-  lv_obj_align(lbl_x, LV_ALIGN_TOP_LEFT, left_margin + 60, top_margin + graph_height + 5);
-
-  lv_obj_t* lbl_y = lv_label_create(scr);
-  lv_label_set_text(lbl_y, "Voltage ->");
-  lv_obj_set_style_text_color(lbl_y, lv_color_hex(UI_COL_AXIS_TEXT), 0);
-  lv_obj_align(lbl_y, LV_ALIGN_TOP_LEFT, left_margin - 20, top_margin + graph_height/2 + 30);
-  lv_obj_set_style_transform_angle(lbl_y, 2700, 0); // 90 graden roteren
-
-  // -------- onderbalk: meetwaarden en curve-info --------
-  const int bottom_y = top_margin + graph_height + 35;
-
-  // Measurements block (links)
-  ui1_label_meas_title = lv_label_create(scr);
-  lv_label_set_text(ui1_label_meas_title, "Measurements:");
-  lv_obj_set_style_text_color(ui1_label_meas_title, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align(ui1_label_meas_title, LV_ALIGN_TOP_LEFT, left_margin, bottom_y - 8);
-
-  ui1_label_v_meas = lv_label_create(scr);
-  lv_label_set_text(ui1_label_v_meas, "Voltage = 0.00 V");
-  lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align_to(ui1_label_v_meas, ui1_label_meas_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-  ui1_label_i_meas = lv_label_create(scr);
-  lv_label_set_text(ui1_label_i_meas, "Ampere = 0.00 A");
-  lv_obj_set_style_text_color(ui1_label_i_meas, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align_to(ui1_label_i_meas, ui1_label_v_meas, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-  // Curve-info block (rechts van measurements)
-  ui1_label_curve_title = lv_label_create(scr);
-  lv_label_set_text(ui1_label_curve_title, "Curve:");
-  lv_obj_set_style_text_color(ui1_label_curve_title, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align(ui1_label_curve_title, LV_ALIGN_TOP_LEFT, left_margin + 150, bottom_y - 8);
-
-  ui1_label_runtime = lv_label_create(scr);
-  lv_label_set_text(ui1_label_runtime, "Run-time = 00:00");
-  lv_obj_set_style_text_color(ui1_label_runtime, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align_to(ui1_label_runtime, ui1_label_curve_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-  ui1_label_capacity = lv_label_create(scr);
-  lv_label_set_text(ui1_label_capacity, "Capacity = 0.00 F");
-  lv_obj_set_style_text_color(ui1_label_capacity, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align_to(ui1_label_capacity, ui1_label_runtime, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-  ui1_label_state = lv_label_create(scr);
-  lv_label_set_text(ui1_label_state, "Current state = load/unload");
-  lv_obj_set_style_text_color(ui1_label_state, lv_color_hex(UI_COL_MEAS_TEXT), 0);
-  lv_obj_align_to(ui1_label_state, ui1_label_capacity, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-  // -------- rechter kolom: 5 “knop”-blokken --------
-  lv_obj_t* sidebar = lv_obj_create(scr);
-  lv_obj_set_size(sidebar, 120, 300);
-  lv_obj_align(sidebar, LV_ALIGN_RIGHT_MID, -5, 5);
-  lv_obj_set_style_bg_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BG), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(sidebar, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BORDER), LV_PART_MAIN);
-  lv_obj_set_style_border_width(sidebar, 1, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(sidebar, 4, LV_PART_MAIN);
-  lv_obj_set_style_pad_gap(sidebar, 4, LV_PART_MAIN);
-  lv_obj_set_flex_flow(sidebar, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(sidebar,
-                        LV_FLEX_ALIGN_START,
-                        LV_FLEX_ALIGN_CENTER,
-                        LV_FLEX_ALIGN_START);
-
-  lv_obj_clear_flag(sidebar, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_scrollbar_mode(sidebar, LV_SCROLLBAR_MODE_OFF);
-
-  auto make_btn = [&](const char* txt) -> lv_obj_t* {
-    lv_obj_t* btn = lv_btn_create(sidebar);
-
-    // Breedte 100%, hoogte door flex/content bepalen
     lv_obj_set_width(btn, LV_PCT(100));
     lv_obj_set_height(btn, LV_SIZE_CONTENT);
-    lv_obj_set_flex_grow(btn, 1); // verdeel hoogte gelijk
+    lv_obj_set_flex_grow(btn, 1);
 
     lv_obj_set_style_radius(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BUTTON_BG), LV_PART_MAIN);
@@ -370,101 +219,183 @@ void ui1_create() {
     lv_obj_set_style_text_color(l, lv_color_hex(UI_COL_BUTTON_TEXT), 0);
 
     return btn;
-  };
-
-  ui1_btn_choose_curve = make_btn("Choose Curve");
-  ui1_btn_choose_setp  = make_btn("Choose Setpoint");
-  ui1_btn_nominal_v    = make_btn("Nominal voltage:\n0.00 V");
-  ui1_btn_capacity     = make_btn("Capacity\n0.00 F");
-  ui1_btn_reset        = make_btn("Reset");
-
-  // labels uit de knoppen trekken zodat we ze kunnen updaten
-  if (ui1_btn_nominal_v)  ui1_lbl_btn_nominal_v = lv_obj_get_child(ui1_btn_nominal_v, 0);
-  if (ui1_btn_capacity)   ui1_lbl_btn_capacity  = lv_obj_get_child(ui1_btn_capacity, 0);
-
-  // Softkey arrays vullen (1..5)
-  ui1_btn_arr[0] = ui1_btn_choose_curve;
-  ui1_btn_arr[1] = ui1_btn_choose_setp;
-  ui1_btn_arr[2] = ui1_btn_nominal_v;
-  ui1_btn_arr[3] = ui1_btn_capacity;
-  ui1_btn_arr[4] = ui1_btn_reset;
-
-  for (int i = 0; i < 5; ++i) {
-      ui1_lbl_arr[i] = ui1_btn_arr[i] ? lv_obj_get_child(ui1_btn_arr[i], 0) : nullptr;
-  }
-
-  // Reset highlight state
-  for (int i = 0; i < 5; ++i) set_btn_style(ui1_btn_arr[i], ui1_lbl_arr[i], false);
-
-  // Overlay blijft hidden
-  ui_overlay_hide();
 }
 
-void ui1_update(const DisplayModel& m) {
-  char buf[64];
+void ui1_create()
+{
+    lv_obj_t* scr = lv_obj_create(NULL);
+    lv_scr_load(scr);
 
-  // ---- curve in chart ----
-  if (ui1_chart && ui1_series) {
-    const int n = (m.ui1.curve_len > 32) ? 32 : m.ui1.curve_len;
-    for (int i = 0; i < n; ++i) {
-      lv_chart_set_value_by_id(ui1_chart, ui1_series, i, m.ui1.curve[i]);
+
+    overlay_ensure_created();
+
+    lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+
+    // Title
+    lv_obj_t* title = lv_label_create(scr);
+    lv_label_set_text(title, "emulation");
+    lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+
+    // Sidebar rechts
+    lv_obj_t* sidebar = lv_obj_create(scr);
+    lv_obj_set_size(sidebar, 120, 300);
+    lv_obj_align(sidebar, LV_ALIGN_RIGHT_MID, -5, 5);
+
+    lv_obj_set_style_bg_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sidebar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BORDER), LV_PART_MAIN);
+    lv_obj_set_style_border_width(sidebar, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(sidebar, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(sidebar, 4, LV_PART_MAIN);
+
+    lv_obj_set_flex_flow(sidebar, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(sidebar,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_START);
+
+    lv_obj_clear_flag(sidebar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(sidebar, LV_SCROLLBAR_MODE_OFF);
+
+    ui1_btn_choose_curve = make_btn(sidebar, "Choose Curve");
+    ui1_btn_choose_setp  = make_btn(sidebar, "Choose Setpoint");
+    ui1_btn_nominal_v    = make_btn(sidebar, "Nominal voltage:\n0.00 V");
+    ui1_btn_capacity     = make_btn(sidebar, "Capacity\n0.00 mAh");
+    ui1_btn_reset        = make_btn(sidebar, "Reset");
+
+    ui1_btn_arr[0] = ui1_btn_choose_curve;
+    ui1_btn_arr[1] = ui1_btn_choose_setp;
+    ui1_btn_arr[2] = ui1_btn_nominal_v;
+    ui1_btn_arr[3] = ui1_btn_capacity;
+    ui1_btn_arr[4] = ui1_btn_reset;
+
+    for (int i = 0; i < 5; ++i) {
+        ui1_lbl_arr[i] = ui1_btn_arr[i] ? lv_obj_get_child(ui1_btn_arr[i], 0) : nullptr;
+        set_btn_style(ui1_btn_arr[i], ui1_lbl_arr[i], false);
     }
-    lv_chart_refresh(ui1_chart);
-  }
 
-  // ---- Measurements ----
-  snprintf(buf, sizeof(buf), "Voltage = %.2f V", m.ui1.voltage_val);
-  if (ui1_label_v_meas) lv_label_set_text(ui1_label_v_meas, buf);
+    // Chart links (ruimte vrij laten voor sidebar)
+    ui1_chart = lv_chart_create(scr);
+    lv_obj_set_size(ui1_chart, 320, 160);
+    lv_obj_align(ui1_chart, LV_ALIGN_TOP_LEFT, 10, 35);
 
-  snprintf(buf, sizeof(buf), "Ampere = %.2f A", m.ui1.current_val);
-  if (ui1_label_i_meas) lv_label_set_text(ui1_label_i_meas, buf);
+    lv_chart_set_type(ui1_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(ui1_chart, 32);
+    lv_chart_set_range(ui1_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
 
-  // ---- Curve-info: runtime, capacity, state ----
-  uint32_t minutes = m.ui1.runtime_sec / 60;
-  uint32_t seconds = m.ui1.runtime_sec % 60;
+    lv_obj_set_style_bg_color(ui1_chart, lv_color_hex(UI_COL_CHART_BG), LV_PART_MAIN);
+    lv_obj_set_style_border_color(ui1_chart, lv_color_hex(UI_COL_CHART_BORDER), LV_PART_MAIN);
+    lv_obj_set_style_border_width(ui1_chart, 1, LV_PART_MAIN);
 
-  snprintf(buf, sizeof(buf), "Run-time = %02u:%02u", (unsigned)minutes, (unsigned)seconds);
-  if (ui1_label_runtime) lv_label_set_text(ui1_label_runtime, buf);
+    ui1_series = lv_chart_add_series(ui1_chart, lv_color_hex(UI_COL_CHART_SERIES), LV_CHART_AXIS_PRIMARY_Y);
+    for (int i = 0; i < 32; ++i) lv_chart_set_next_value(ui1_chart, ui1_series, 0);
 
-  snprintf(buf, sizeof(buf), "Capacity = %.2f F", m.ui1.capacity_val);
-  if (ui1_label_capacity) lv_label_set_text(ui1_label_capacity, buf);
+    // Onderste tekstblokken
+    ui1_label_meas_title = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_meas_title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_meas_title, "measurements");
+    lv_obj_align(ui1_label_meas_title, LV_ALIGN_BOTTOM_LEFT, 10, -80);
 
-  if (ui1_label_state) {
-    lv_label_set_text(ui1_label_state,
-                      m.ui1.state_load ? "Current state = load"
-                                       : "Current state = unload");
-  }
+    ui1_label_v_meas = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_v_meas, "voltage:\n0.00");
+    lv_obj_align(ui1_label_v_meas, LV_ALIGN_BOTTOM_LEFT, 10, -45);
 
-  // ---- Verticale lijn op basis van progress index ----
-  ui1_update_progress_line(m);
+    ui1_label_i_meas = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_i_meas, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_i_meas, "ampere:\n0.00");
+    lv_obj_align(ui1_label_i_meas, LV_ALIGN_BOTTOM_LEFT, 140, -45);
 
-  // ---- Buttons: nominal voltage & capacity ----
-  if (ui1_lbl_btn_nominal_v) {
-    snprintf(buf, sizeof(buf), "Nominal voltage:\n%.2f V", m.ui1.nominal_v_val);
-    lv_label_set_text(ui1_lbl_btn_nominal_v, buf);
-  }
+    ui1_label_curve_title = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_curve_title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_curve_title, "loadcurve");
+    lv_obj_align(ui1_label_curve_title, LV_ALIGN_BOTTOM_LEFT, 10, -20);
 
-  if (ui1_lbl_btn_capacity) {
-    snprintf(buf, sizeof(buf), "Capacity\n%.2f F", m.ui1.btn_capacity_val);
-    lv_label_set_text(ui1_lbl_btn_capacity, buf);
-  }
+    ui1_label_runtime = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_runtime, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_runtime, "runtime:\n0 sec");
+    lv_obj_align(ui1_label_runtime, LV_ALIGN_BOTTOM_LEFT, 10, 0);
+
+    ui1_label_capacity = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_capacity, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_capacity, "capacity:\n0.00 mAh");
+    lv_obj_align(ui1_label_capacity, LV_ALIGN_BOTTOM_LEFT, 140, 0);
+
+    ui1_label_state = lv_label_create(scr);
+    lv_obj_set_style_text_color(ui1_label_state, lv_color_hex(UI_COL_TEXT), 0);
+    lv_label_set_text(ui1_label_state, "state:\nload");
+    lv_obj_align(ui1_label_state, LV_ALIGN_BOTTOM_LEFT, 280, 0);
+
+    ui_overlay_hide();
 }
 
-// ================= UI 2: Constant source (gauge) =================
+void ui1_update(const DisplayModel& m)
+{
+    // curve -> chart
+    if (ui1_chart && ui1_series) {
+        lv_chart_set_point_count(ui1_chart, 32);
+        for (int i = 0; i < 32; ++i) {
+            int v = 0;
+            if (i < m.ui1.curve_len) v = m.ui1.curve[i];
+            if (v < 0) v = 0;
+            if (v > 100) v = 100;
+            lv_chart_set_value_by_id(ui1_chart, ui1_series, i, v);
+        }
+        lv_chart_refresh(ui1_chart);
+    }
 
-// UI2 object pointers
+    if (ui1_label_v_meas) {
+        char b[32];
+        snprintf(b, sizeof(b), "voltage:\n%.2f", (double)m.ui1.voltage_val);
+        lv_label_set_text(ui1_label_v_meas, b);
+    }
+    if (ui1_label_i_meas) {
+        char b[32];
+        snprintf(b, sizeof(b), "ampere:\n%.2f", (double)m.ui1.current_val);
+        lv_label_set_text(ui1_label_i_meas, b);
+    }
+    if (ui1_label_runtime) {
+        char b[32];
+        snprintf(b, sizeof(b), "runtime:\n%lu sec", (unsigned long)m.ui1.runtime_sec);
+        lv_label_set_text(ui1_label_runtime, b);
+    }
+    if (ui1_label_capacity) {
+        char b[40];
+        snprintf(b, sizeof(b), "capacity:\n%.2f mAh", (double)m.ui1.capacity_val);
+        lv_label_set_text(ui1_label_capacity, b);
+    }
+    if (ui1_label_state) {
+        lv_label_set_text(ui1_label_state, m.ui1.state_load ? "state:\nload" : "state:\nunload");
+    }
+
+    // softkey tekst: nominal voltage + capacity knop
+    if (ui1_lbl_arr[2]) {
+        char b[40];
+        snprintf(b, sizeof(b), "Nominal voltage:\n%.2f V", (double)m.ui1.nominal_v_val);
+        lv_label_set_text(ui1_lbl_arr[2], b);
+    }
+    if (ui1_lbl_arr[3]) {
+        char b[40];
+        snprintf(b, sizeof(b), "Capacity\n%.2f mAh", (double)m.ui1.btn_capacity_val);
+        lv_label_set_text(ui1_lbl_arr[3], b);
+    }
+}
+
+
+// ================= UI2: Constant source (gauge) =================
+
 static lv_obj_t* ui2_arc             = nullptr;
 static lv_obj_t* ui2_label_voltage   = nullptr;
 static lv_obj_t* ui2_label_ampere    = nullptr;
 
-// Buttons
 static lv_obj_t* ui2_btn_voltage       = nullptr;
 static lv_obj_t* ui2_btn_current_limit = nullptr;
 static lv_obj_t* ui2_btn_empty3        = nullptr;
 static lv_obj_t* ui2_btn_empty4        = nullptr;
 static lv_obj_t* ui2_btn_reset         = nullptr;
 
-// UI2 softkey arrays
 static lv_obj_t* ui2_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 static lv_obj_t* ui2_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
 
@@ -497,8 +428,9 @@ static lv_obj_t* ui2_make_btn(lv_obj_t* parent, const char* txt)
 
 void ui2_create()
 {
-    lv_obj_t* scr = lv_screen_active();
-    lv_obj_clean(scr);
+    lv_obj_t* scr = lv_obj_create(NULL);
+    lv_scr_load(scr);
+
 
     overlay_ensure_created();
 
@@ -506,7 +438,7 @@ void ui2_create()
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t* title = lv_label_create(scr);
-    lv_label_set_text(title, "constant scource");
+    lv_label_set_text(title, "constant source");
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
@@ -541,6 +473,7 @@ void ui2_create()
     ui2_btn_arr[2] = ui2_btn_empty3;
     ui2_btn_arr[3] = ui2_btn_empty4;
     ui2_btn_arr[4] = ui2_btn_reset;
+
     for (int i = 0; i < 5; ++i) {
         ui2_lbl_arr[i] = ui2_btn_arr[i] ? lv_obj_get_child(ui2_btn_arr[i], 0) : nullptr;
         set_btn_style(ui2_btn_arr[i], ui2_lbl_arr[i], false);
@@ -592,17 +525,18 @@ void ui2_update(const DisplayModel& m)
 
     if (ui2_label_voltage) {
         char b[32];
-        snprintf(b, sizeof(b), "Voltage:\n%.2f", m.ui2.set_voltage);
+        snprintf(b, sizeof(b), "Voltage:\n%.2f", (double)m.ui2.set_voltage);
         lv_label_set_text(ui2_label_voltage, b);
     }
     if (ui2_label_ampere) {
         char b[32];
-        snprintf(b, sizeof(b), "Ampere:\n%.2f", m.ui2.meas_ampere);
+        snprintf(b, sizeof(b), "Ampere:\n%.2f", (double)m.ui2.meas_ampere);
         lv_label_set_text(ui2_label_ampere, b);
     }
 }
 
-// ================= UI 3: Constant sink (gauge) =================
+
+// ================= UI3: Constant sink (gauge) =================
 
 static lv_obj_t* ui3_arc             = nullptr;
 static lv_obj_t* ui3_label_ampere    = nullptr;
@@ -646,8 +580,9 @@ static lv_obj_t* ui3_make_btn(lv_obj_t* parent, const char* txt)
 
 void ui3_create()
 {
-    lv_obj_t* scr = lv_screen_active();
-    lv_obj_clean(scr);
+    lv_obj_t* scr = lv_obj_create(NULL);
+    lv_scr_load(scr);
+
 
     overlay_ensure_created();
 
@@ -690,6 +625,7 @@ void ui3_create()
     ui3_btn_arr[2] = ui3_btn_empty3;
     ui3_btn_arr[3] = ui3_btn_empty4;
     ui3_btn_arr[4] = ui3_btn_reset;
+
     for (int i = 0; i < 5; ++i) {
         ui3_lbl_arr[i] = ui3_btn_arr[i] ? lv_obj_get_child(ui3_btn_arr[i], 0) : nullptr;
         set_btn_style(ui3_btn_arr[i], ui3_lbl_arr[i], false);
@@ -741,182 +677,71 @@ void ui3_update(const DisplayModel& m)
 
     if (ui3_label_ampere) {
         char b[32];
-        snprintf(b, sizeof(b), "Ampere:\n%.2f", m.ui3.set_ampere);
+        snprintf(b, sizeof(b), "Ampere:\n%.2f", (double)m.ui3.set_ampere);
         lv_label_set_text(ui3_label_ampere, b);
     }
 
     if (ui3_label_voltage) {
         char b[32];
-        snprintf(b, sizeof(b), "Voltage:\n%.2f", m.ui3.meas_voltage);
+        snprintf(b, sizeof(b), "Voltage:\n%.2f", (double)m.ui3.meas_voltage);
         lv_label_set_text(ui3_label_voltage, b);
     }
 }
 
-// ============================================================
-// UI helpers: softkey highlight + overlay (modal card)
-// ============================================================
 
-static void ui_set_btn_highlight(lv_obj_t* btn, bool on)
+// =========================
+// Public softkey helper API (legacy: key_index = 1..5)
+// =========================
+static void softkey_set(uint8_t idx, bool on, lv_obj_t* btn_arr[5], lv_obj_t* lbl_arr[5])
 {
-    if (!btn) return;
+    if (idx < 1 || idx > 5) return;
+    const uint8_t i = (uint8_t)(idx - 1);
+    set_btn_style(btn_arr[i], lbl_arr[i], on);
+}
 
-    // label is child 0
-    lv_obj_t* lbl = lv_obj_get_child(btn, 0);
+static void softkey_text(uint8_t idx, const char* text, lv_obj_t* lbl_arr[5])
+{
+    if (idx < 1 || idx > 5) return;
+    const uint8_t i = (uint8_t)(idx - 1);
+    if (lbl_arr[i] && text) lv_label_set_text(lbl_arr[i], text);
+}
 
-    if (on)
-    {
-        // omgekeerd: zwart met gele tekst
-        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
-        lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
-        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_TEXT), 0);
-    }
-    else
-    {
-        // default: geel met zwarte tekst
-        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_BUTTON_BG), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_BUTTON_BORDER), LV_PART_MAIN);
-        lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
-        if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COL_BUTTON_TEXT), 0);
-    }
+void ui1_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui1_btn_arr, ui1_lbl_arr); }
+void ui2_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui2_btn_arr, ui2_lbl_arr); }
+void ui3_set_softkey_highlight(uint8_t key_index, bool on) { softkey_set(key_index, on, ui3_btn_arr, ui3_lbl_arr); }
+
+void ui1_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui1_lbl_arr); }
+void ui2_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui2_lbl_arr); }
+void ui3_set_softkey_text(uint8_t key_index, const char* text) { softkey_text(key_index, text, ui3_lbl_arr); }
+
+
+// =========================
+// display.cpp compat wrappers (idx = 0..4)
+// =========================
+static void clear_all(lv_obj_t* btn_arr[5], lv_obj_t* lbl_arr[5])
+{
+    for (uint8_t i = 1; i <= 5; ++i) softkey_set(i, false, btn_arr, lbl_arr);
 }
 
 void ui1_softkey_set_active(int idx, bool active)
 {
-    lv_obj_t* btn = nullptr;
-    switch (idx)
-    {
-        case 0: btn = ui1_btn_choose_curve; break;
-        case 1: btn = ui1_btn_choose_setp;  break;
-        case 2: btn = ui1_btn_nominal_v;    break;
-        case 3: btn = ui1_btn_capacity;     break;
-        case 4: btn = ui1_btn_reset;        break;
-        default: return;
-    }
-    ui_set_btn_highlight(btn, active);
+    // display.cpp gebruikt 0..4
+    if (idx < 0 || idx > 4) return;
+    ui1_set_softkey_highlight((uint8_t)(idx + 1), active);
 }
 
 void ui2_softkey_set_active(int idx, bool active)
 {
-    lv_obj_t* btn = nullptr;
-    switch (idx)
-    {
-        case 0: btn = ui2_btn_voltage;       break;
-        case 1: btn = ui2_btn_current_limit; break;
-        case 2: btn = ui2_btn_empty3;        break;
-        case 3: btn = ui2_btn_empty4;        break;
-        case 4: btn = ui2_btn_reset;         break;
-        default: return;
-    }
-    ui_set_btn_highlight(btn, active);
+    if (idx < 0 || idx > 4) return;
+    ui2_set_softkey_highlight((uint8_t)(idx + 1), active);
 }
 
 void ui3_softkey_set_active(int idx, bool active)
 {
-    lv_obj_t* btn = nullptr;
-    switch (idx)
-    {
-        case 0: btn = ui3_btn_ampere; break;
-        case 1: btn = ui3_btn_vlimit; break;
-        case 2: btn = ui3_btn_empty3; break;
-        case 3: btn = ui3_btn_empty4; break;
-        case 4: btn = ui3_btn_reset;  break;
-        default: return;
-    }
-    ui_set_btn_highlight(btn, active);
+    if (idx < 0 || idx > 4) return;
+    ui3_set_softkey_highlight((uint8_t)(idx + 1), active);
 }
 
-void ui1_softkey_clear_all()
-{
-    for (int i = 0; i < 5; ++i) ui1_softkey_set_active(i, false);
-}
-
-void ui2_softkey_clear_all()
-{
-    for (int i = 0; i < 5; ++i) ui2_softkey_set_active(i, false);
-}
-
-void ui3_softkey_clear_all()
-{
-    for (int i = 0; i < 5; ++i) ui3_softkey_set_active(i, false);
-}
-
-// ---------------- Overlay card ----------------
-static lv_obj_t* g_overlay_cont  = nullptr;
-static lv_obj_t* g_overlay_title = nullptr;
-static lv_obj_t* g_overlay_value = nullptr;
-static lv_obj_t* g_overlay_hint  = nullptr;
-
-static void ui_overlay_create_if_needed()
-{
-    if (g_overlay_cont) return;
-
-    lv_obj_t* parent = lv_layer_top();
-    g_overlay_cont = lv_obj_create(parent);
-
-    // Card size
-    lv_obj_set_size(g_overlay_cont, 280, 140);
-
-    // Shift left (ruimte voor sidebar rechts)
-    const int shift_x = -65;
-    lv_obj_align(g_overlay_cont, LV_ALIGN_CENTER, shift_x, 0);
-
-    lv_obj_set_style_radius(g_overlay_cont, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(g_overlay_cont, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(g_overlay_cont, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(g_overlay_cont, lv_color_hex(UI_COL_TEXT), LV_PART_MAIN);
-    lv_obj_set_style_border_width(g_overlay_cont, 2, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(g_overlay_cont, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_gap(g_overlay_cont, 6, LV_PART_MAIN);
-
-    // Overlay moet bovenop zitten en geen scroll
-    lv_obj_clear_flag(g_overlay_cont, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(g_overlay_cont, LV_SCROLLBAR_MODE_OFF);
-
-    // Title
-    g_overlay_title = lv_label_create(g_overlay_cont);
-    lv_obj_set_style_text_color(g_overlay_title, lv_color_hex(UI_COL_TEXT), 0);
-    lv_obj_set_style_text_font(g_overlay_title, &lv_font_montserrat_16, 0);
-    lv_label_set_text(g_overlay_title, "");
-
-    // Value
-    g_overlay_value = lv_label_create(g_overlay_cont);
-    lv_obj_set_style_text_color(g_overlay_value, lv_color_hex(UI_COL_TEXT), 0);
-    lv_obj_set_style_text_font(g_overlay_value, &lv_font_montserrat_18, 0);
-    lv_label_set_text(g_overlay_value, "");
-
-    // Hint
-    g_overlay_hint = lv_label_create(g_overlay_cont);
-    lv_obj_set_style_text_color(g_overlay_hint, lv_color_hex(UI_COL_TEXT), 0);
-    lv_obj_set_style_text_font(g_overlay_hint, &lv_font_montserrat_12, 0);
-    lv_label_set_text(g_overlay_hint, "");
-}
-
-void ui_overlay_show(const char* title, const char* value_line, const char* hint_line)
-{
-    ui_overlay_create_if_needed();
-    ui_overlay_update(title, value_line, hint_line);
-    lv_obj_clear_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
-}
-
-void ui_overlay_update(const char* title, const char* value_line, const char* hint_line)
-{
-    ui_overlay_create_if_needed();
-    if (g_overlay_title) lv_label_set_text(g_overlay_title, title ? title : "");
-    if (g_overlay_value) lv_label_set_text(g_overlay_value, value_line ? value_line : "");
-    if (g_overlay_hint)  lv_label_set_text(g_overlay_hint,  hint_line ? hint_line : "");
-}
-
-void ui_overlay_hide()
-{
-    if (!g_overlay_cont) return;
-    lv_obj_add_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
-}
-
-bool ui_overlay_is_visible()
-{
-    if (!g_overlay_cont) return false;
-    return !lv_obj_has_flag(g_overlay_cont, LV_OBJ_FLAG_HIDDEN);
-}
+void ui1_softkey_clear_all() { clear_all(ui1_btn_arr, ui1_lbl_arr); }
+void ui2_softkey_clear_all() { clear_all(ui2_btn_arr, ui2_lbl_arr); }
+void ui3_softkey_clear_all() { clear_all(ui3_btn_arr, ui3_lbl_arr); }

@@ -5,6 +5,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_timer.h"
 
 // interne opslag
 static SystemData g_sys;
@@ -16,23 +17,37 @@ static void init_default_curves(CurveData* c)
     if (!c) return;
     c->len = CURVE_LEN;
 
-    // Voorbeeldcurves (0..100). Vervang later door jouw echte laad/ontlaadprofielen.
-    const int16_t c0[CURVE_LEN] = {
-        100,98,96,94,92,90,88,86,84,82,80,78,76,74,72,70,
-        68,66,64,62,60,58,56,54,52,50,48,46,44,42,40,38
-    };
-    const int16_t c1[CURVE_LEN] = {
-        100,100,99,99,98,97,96,95,93,91,89,87,84,81,78,75,
-        72,69,66,63,60,57,54,51,48,45,42,38,34,28,20,10
-    };
-    const int16_t c2[CURVE_LEN] = {
-        100,100,100,100,99,99,99,98,98,97,97,96,96,95,95,94,
-        93,92,90,88,85,82,78,74,70,65,60,54,48,40,30,15
+    // Realistische (ruwe) ontlaadcurves, genormaliseerd naar 0..100% van volle spanning.
+    // X-as: capaciteit / SOC van 100% -> 0% (links->rechts).
+    // Dit zijn "typische vormen" en geen datasheet-garanties.
+
+    // Curve 0: Li-ion (NMC/18650) - snelle init drop, lange plateau, eind-sag
+    const int16_t liion[CURVE_LEN] = {
+        100,99,98,97,96,95,95,94,
+        94,93,93,92,92,91,91,90,
+        89,88,87,86,85,84,82,80,
+        78,76,73,68,60,48,30,10
     };
 
-    memcpy(c->curve0, c0, sizeof(c0));
-    memcpy(c->curve1, c1, sizeof(c1));
-    memcpy(c->curve2, c2, sizeof(c2));
+    // Curve 1: LiFePO4 - zeer vlak plateau rond ~3.3V, daarna snelle drop
+    const int16_t lifepo4[CURVE_LEN] = {
+        100,99,99,98,98,97,97,96,
+        96,96,95,95,95,94,94,94,
+        93,93,93,92,92,92,91,90,
+        88,85,80,70,55,38,20,8
+    };
+
+    // Curve 2: Lead-acid - meer lineaire sag
+    const int16_t leadacid[CURVE_LEN] = {
+        100,99,98,97,96,95,94,93,
+        92,91,90,89,88,87,86,85,
+        84,83,82,81,80,79,78,76,
+        74,72,70,67,62,54,42,28
+    };
+
+    memcpy(c->curve0, liion, sizeof(liion));
+    memcpy(c->curve1, lifepo4, sizeof(lifepo4));
+    memcpy(c->curve2, leadacid, sizeof(leadacid));
 }
 
 void system_init(void)
@@ -43,48 +58,31 @@ void system_init(void)
     system_lock_data();
     memset(&g_sys, 0, sizeof(g_sys));
 
-    g_sys.status.state        = SYS_STATE_CONFIG;
-    g_sys.status.mode_current = POWER_MODE_EMULATE;
-    g_sys.status.mode_pending = POWER_MODE_EMULATE;
+    // Curves + UI defaults
+    init_default_curves(&g_sys.curves);
 
-    // Veilig default: control disabled
-    g_sys.status.status_flags = 0;
+    g_sys.ui.active_screen     = UI_SCREEN_EMULATE;
+    g_sys.ui.selected_curve_id = 0;
+    g_sys.ui.start_index       = 0;
+    g_sys.ui.nominal_voltage   = 4.20f;   // typische volle Li-ion spanning (1S)
+    g_sys.ui.capacity_mAh   = 3000.0f;
+    g_sys.ui.capacity_value = g_sys.ui.capacity_mAh;
 
-    // Defaults
-    g_sys.cfg.set_voltage     = 0.0f;
-    g_sys.cfg.set_current     = 0.0f;
-    g_sys.cfg.logging_enabled = false;
-    g_sys.cfg.curve_id        = 0;
+    g_sys.ui.ui2_set_voltage   = 5.0f;
+    g_sys.ui.ui2_current_limit = 2.0f;
 
-    g_sys.control.pwm_duty          = 0;
-    g_sys.control.desired_rpot_code = 0;
-    g_sys.control.desired_mode      = POWER_MODE_SOURCE;
-
-    g_sys.apply.applied_rpot_code = 0;
-    g_sys.apply.applied_mode      = POWER_MODE_SOURCE;
-    g_sys.apply.apply_error_flags = APPLY_I2C_OK;
-    g_sys.apply.last_apply_t_ms   = 0;
-
-    // UI defaults
-    g_sys.ui.active_screen      = UI_SCREEN_EMULATE;
-    g_sys.ui.selected_curve_id  = 0;
-    g_sys.ui.start_index        = 0;
-    g_sys.ui.nominal_voltage    = 0.0f;
-    g_sys.ui.capacity_value     = 0.0f;
-    g_sys.ui.ui2_set_voltage    = 0.0f;
-    g_sys.ui.ui2_current_limit  = 0.0f;
-    g_sys.ui.ui3_set_current    = 0.0f;
-    g_sys.ui.ui3_voltage_limit  = 0.0f;
+    g_sys.ui.ui3_set_current   = 1.0f;
+    g_sys.ui.ui3_voltage_limit = 12.0f;
 
     g_sys.ui_events.flags = UI_EVT_NONE;
     g_sys.ui_events.field = UI_EDIT_NONE;
     g_sys.ui_events.seq   = 0;
 
-    // Curves defaults
-    init_default_curves(&g_sys.curves);
+    g_sys.status.state        = SYS_STATE_CONFIG;
+    g_sys.status.mode_current = POWER_MODE_EMULATE;
+    g_sys.status.mode_pending = POWER_MODE_EMULATE;
 
     g_sys.seq = 0;
-
     system_unlock_data();
 }
 
@@ -100,7 +98,6 @@ void system_read_snapshot(SystemSnapshot* out_snapshot)
 void system_write_measurement(const MeasurementData* meas)
 {
     if (!meas) return;
-
     system_lock_data();
     g_sys.meas = *meas;
     g_sys.seq++;
@@ -110,7 +107,6 @@ void system_write_measurement(const MeasurementData* meas)
 void system_write_control(const ControlData* ctrl)
 {
     if (!ctrl) return;
-
     system_lock_data();
     g_sys.control = *ctrl;
     g_sys.seq++;
@@ -120,7 +116,6 @@ void system_write_control(const ControlData* ctrl)
 void system_write_apply_status(const ApplyStatus* apply)
 {
     if (!apply) return;
-
     system_lock_data();
     g_sys.apply = *apply;
     g_sys.seq++;
@@ -130,7 +125,6 @@ void system_write_apply_status(const ApplyStatus* apply)
 void system_write_config(const ConfigData* cfg)
 {
     if (!cfg) return;
-
     system_lock_data();
     g_sys.cfg = *cfg;
     g_sys.seq++;
@@ -140,7 +134,6 @@ void system_write_config(const ConfigData* cfg)
 void system_write_status(const SystemStatus* status)
 {
     if (!status) return;
-
     system_lock_data();
     g_sys.status = *status;
     g_sys.seq++;
@@ -150,7 +143,6 @@ void system_write_status(const SystemStatus* status)
 void system_write_io_shared(const IOShared* io)
 {
     if (!io) return;
-
     system_lock_data();
     g_sys.io = *io;
     g_sys.seq++;
@@ -160,7 +152,6 @@ void system_write_io_shared(const IOShared* io)
 void system_write_curves(const CurveData* curves)
 {
     if (!curves) return;
-
     system_lock_data();
     g_sys.curves = *curves;
     g_sys.seq++;
@@ -170,7 +161,6 @@ void system_write_curves(const CurveData* curves)
 void system_write_ui_shared(const UIShared* ui)
 {
     if (!ui) return;
-
     system_lock_data();
     g_sys.ui = *ui;
     g_sys.seq++;
@@ -180,7 +170,6 @@ void system_write_ui_shared(const UIShared* ui)
 void system_write_ui_events(const UIEvents* ev)
 {
     if (!ev) return;
-
     system_lock_data();
     g_sys.ui_events = *ev;
     g_sys.seq++;

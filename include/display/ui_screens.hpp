@@ -55,8 +55,11 @@ void ui3_update(const DisplayModel& m);
 // =========================
 // UI helpers (softkey highlight + overlay)
 // =========================
+//
+// Let op: display.cpp gebruikt ui*_softkey_* functies met idx 0..4.
+// Intern houden we ook de oude (key_index 1..5) helper functies aan.
 
-// Softkeys zijn altijd 5 stuks (rechts naast het scherm)
+// Softkeys (display.cpp compat): idx = 0..4
 void ui1_softkey_set_active(int idx, bool active);
 void ui2_softkey_set_active(int idx, bool active);
 void ui3_softkey_set_active(int idx, bool active);
@@ -70,3 +73,19 @@ void ui_overlay_show(const char* title, const char* value_line, const char* hint
 void ui_overlay_update(const char* title, const char* value_line, const char* hint_line);
 void ui_overlay_hide();
 bool ui_overlay_is_visible();
+
+
+// =========================
+// Legacy / extra helpers (blijven bestaan)
+// =========================
+// key_index = 1..5
+void ui1_set_softkey_highlight(uint8_t key_index, bool on);
+void ui2_set_softkey_highlight(uint8_t key_index, bool on);
+void ui3_set_softkey_highlight(uint8_t key_index, bool on);
+
+void ui1_set_softkey_text(uint8_t key_index, const char* text);
+void ui2_set_softkey_text(uint8_t key_index, const char* text);
+void ui3_set_softkey_text(uint8_t key_index, const char* text);
+
+// (bestond al in jouw ui_screens.cpp)
+void ui_overlay_set_value(const char* value);

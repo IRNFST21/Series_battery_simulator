@@ -172,6 +172,7 @@ typedef struct
     uint8_t selected_curve_id; // 0..2
     uint8_t start_index;       // 0..(CURVE_LEN-1)
     float   nominal_voltage;   // 0..15 (step 0.1)
+    float   capacity_mAh;      // mAh (step 1)
     float   capacity_value;    // F (step 0.1)
 
     // UI2 (Const Source)

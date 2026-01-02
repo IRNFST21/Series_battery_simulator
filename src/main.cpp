@@ -141,7 +141,7 @@ void setup()
       nullptr,
       1,
       nullptr,
-      0);
+      1);
 
   xTaskCreatePinnedToCore(
       simulateUiTask,
@@ -150,7 +150,7 @@ void setup()
       nullptr,
       1,
       nullptr,
-      1);
+      0);
 
   Serial.println("setup done");
 }
