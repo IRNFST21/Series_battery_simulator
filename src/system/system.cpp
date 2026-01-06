@@ -1,5 +1,4 @@
 // system/system.cpp
-
 #include "system/system.h"
 
 #include <string.h>
@@ -7,87 +6,45 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-// Interne opslag
+// interne opslag
 static SystemData g_sys;
 static SemaphoreHandle_t g_data_mutex = nullptr;
 static SemaphoreHandle_t g_i2c_mutex  = nullptr;
 
-// =========================
-// Defaults
-// =========================
-
+// Curves in permille (0..1000). X-as = capaciteit (0..capacity_set_mAh) gelijk verdeeld over CURVE_LEN.
 static void init_default_curves(CurveData* c)
 {
     if (!c) return;
     c->len = CURVE_LEN;
 
-    // 3 voorbeeld "battery-like" ontlaadcurves in voltage-% (0..100).
-    // Interpretatie: Y% wordt geschaald met nominal_voltage_V.
-    // X-as is uniforme stapjes over capaciteit.
-
-    // Curve 0: Li-ion (relatief vlak plateau, dan drop)
-    const int16_t c0[CURVE_LEN] = {
-        100,100, 99, 99, 98, 98, 97, 97,
-         96, 96, 95, 95, 94, 94, 93, 93,
-         92, 92, 90, 88, 86, 84, 82, 80,
-         78, 75, 72, 68, 62, 55, 45, 30
+    // Curve 0: Li-ion (NMC) typische discharge shape
+    const int16_t liion[CURVE_LEN] = {
+        1000,995,990,985,980,975,970,968,
+        965,962,960,957,955,952,950,947,
+        942,935,925,910,895,875,850,820,
+        790,760,720,670,600,500,320,120
     };
 
-    // Curve 1: "High-drain" (iets steilere daling over hele curve)
-    const int16_t c1[CURVE_LEN] = {
-        100, 99, 98, 97, 96, 95, 94, 93,
-         92, 91, 90, 89, 88, 87, 86, 85,
-         84, 83, 82, 81, 80, 78, 76, 74,
-         72, 70, 68, 65, 60, 52, 40, 28
+    // Curve 1: LiFePO4 vlak plateau, daarna snelle drop
+    const int16_t lifepo4[CURVE_LEN] = {
+        1000,998,996,994,992,990,988,986,
+        985,984,983,982,981,980,979,978,
+        977,976,975,974,972,970,965,955,
+        930,890,820,720,560,400,220,80
     };
 
-    // Curve 2: "Lead-acid" (hoger begin, meer geleidelijke slope)
-    const int16_t c2[CURVE_LEN] = {
-        100,100,100, 99, 99, 98, 98, 97,
-         97, 96, 96, 95, 95, 94, 94, 93,
-         92, 91, 90, 89, 88, 86, 84, 82,
-         80, 78, 75, 72, 68, 62, 52, 38
+    // Curve 2: Lead-acid meer lineaire sag
+    const int16_t leadacid[CURVE_LEN] = {
+        1000,992,984,976,968,960,952,944,
+        936,928,920,912,904,896,888,880,
+        872,864,856,848,840,832,820,805,
+        790,770,745,715,675,620,520,380
     };
 
-    memcpy(c->curve0, c0, sizeof(c0));
-    memcpy(c->curve1, c1, sizeof(c1));
-    memcpy(c->curve2, c2, sizeof(c2));
+    memcpy(c->curve0, liion, sizeof(liion));
+    memcpy(c->curve1, lifepo4, sizeof(lifepo4));
+    memcpy(c->curve2, leadacid, sizeof(leadacid));
 }
-
-static void init_default_ui(UIShared* ui)
-{
-    if (!ui) return;
-    memset(ui, 0, sizeof(*ui));
-
-    ui->active_screen       = UI_SCREEN_UI1;
-    ui->selected_curve_id   = 0;
-    ui->nominal_voltage_V   = 12.0f;
-    ui->capacity_set_mAh    = 2000; // default 2Ah
-    ui->start_capacity_mAh  = 0;
-
-    ui->ui2_set_voltage     = 5.0f;
-    ui->ui2_current_limit   = 2.0f;
-
-    ui->ui3_set_current     = 1.0f;
-    ui->ui3_voltage_limit   = 12.0f;
-}
-
-static void init_default_status(SystemStatus* st)
-{
-    if (!st) return;
-    memset(st, 0, sizeof(*st));
-
-    st->state        = SYS_STATE_CONFIG;
-    st->mode_current = POWER_MODE_EMULATE;
-    st->mode_pending = POWER_MODE_EMULATE;
-
-    st->runtime_sec      = 0;
-    st->capacity_now_mAh = 0;
-}
-
-// =========================
-// API
-// =========================
 
 void system_init(void)
 {
@@ -97,30 +54,41 @@ void system_init(void)
     system_lock_data();
     memset(&g_sys, 0, sizeof(g_sys));
 
+    // curves
     init_default_curves(&g_sys.curves);
-    init_default_ui(&g_sys.ui);
-    init_default_status(&g_sys.status);
 
-    // Defaults
-    g_sys.cfg.set_voltage     = 0.0f;
-    g_sys.cfg.set_current     = 0.0f;
-    g_sys.cfg.logging_enabled = false;
-    g_sys.cfg.curve_id        = 0;
+    // UI defaults
+    g_sys.ui.active_screen        = UI_SCREEN_UI1;
+    g_sys.ui.selected_curve_id    = 0;
+    g_sys.ui.nominal_voltage_V    = 12.0f;   // “nominal pack voltage” voor emulator
+    g_sys.ui.capacity_set_mAh     = 3000;
+    g_sys.ui.start_capacity_mAh   = 0;
 
-    g_sys.control.pwm_duty          = 0;
-    g_sys.control.desired_rpot_code = 0;
-    g_sys.control.desired_mode      = POWER_MODE_EMULATE;
+    g_sys.ui.ui2_set_voltage      = 5.0f;
+    g_sys.ui.ui2_current_limit    = 2.0f;
 
-    g_sys.apply.applied_rpot_code = 0;
-    g_sys.apply.applied_mode      = POWER_MODE_EMULATE;
-    g_sys.apply.apply_error_flags = APPLY_I2C_OK;
-    g_sys.apply.last_apply_t_ms   = 0;
+    g_sys.ui.ui3_set_current      = 1.0f;
+    g_sys.ui.ui3_voltage_limit    = 12.0f;
 
+    // UI events
     g_sys.ui_events.flags = UI_EVT_NONE;
     g_sys.ui_events.field = UI_EDIT_NONE;
     g_sys.ui_events.seq   = 0;
 
+    // Status defaults
+    g_sys.status.state             = SYS_STATE_CONFIG;
+    g_sys.status.mode_current      = POWER_MODE_EMULATE;
+    g_sys.status.mode_pending      = POWER_MODE_EMULATE;
+
+    g_sys.status.status_flags      = 0;
+    g_sys.status.fault_current_bits = 0;
+    g_sys.status.fault_latched_bits = 0;
+
+    g_sys.status.runtime_sec       = 0;
+    g_sys.status.capacity_now_mAh  = 0;
+
     g_sys.seq = 0;
+
     system_unlock_data();
 }
 
@@ -209,6 +177,22 @@ void system_write_ui_events(const UIEvents* ev)
     if (!ev) return;
     system_lock_data();
     g_sys.ui_events = *ev;
+    g_sys.seq++;
+    system_unlock_data();
+}
+
+void system_set_status_flag(uint32_t flag_bits)
+{
+    system_lock_data();
+    g_sys.status.status_flags |= flag_bits;
+    g_sys.seq++;
+    system_unlock_data();
+}
+
+void system_clear_status_flag(uint32_t flag_bits)
+{
+    system_lock_data();
+    g_sys.status.status_flags &= ~flag_bits;
     g_sys.seq++;
     system_unlock_data();
 }
