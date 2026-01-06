@@ -11,8 +11,6 @@ extern "C" {
 // =========================
 // Constants
 // =========================
-
-// Default curve point count
 #ifndef CURVE_LEN
 #define CURVE_LEN 32
 #endif
@@ -23,43 +21,43 @@ extern "C" {
 
 typedef enum
 {
-    SYS_STATE_CONFIG = 0,
+    SYS_STATE_CONFIG = 0,   // UI mag setpoints/curves aanpassen; emulatie staat stil
     SYS_STATE_READY,
-    SYS_STATE_ACTIVE,
+    SYS_STATE_ACTIVE,       // RUN
     SYS_STATE_ERROR
 } SystemState;
 
 typedef enum
 {
-    POWER_MODE_SOURCE = 0,
-    POWER_MODE_SINK   = 1,
-    POWER_MODE_EMULATE= 2
+    POWER_MODE_SINK = 0,
+    POWER_MODE_SOURCE,
+    POWER_MODE_EMULATE,
 } PowerMode;
 
 typedef enum
 {
-    UI_SCREEN_EMULATE = 0,
-    UI_SCREEN_CONST_SOURCE,
-    UI_SCREEN_CONST_SINK,
-    UI_SCREEN_ERROR
+    UI_SCREEN_UI1 = 0, // Emulate
+    UI_SCREEN_UI2,     // Const Source
+    UI_SCREEN_UI3,     // Const Sink
 } UiScreen;
 
+// Welke parameter wordt bewerkt in CONFIG (voor edit-overlay/UX)
 typedef enum
 {
     UI_EDIT_NONE = 0,
 
     // UI1
     UI_EDIT_UI1_CURVE,
-    UI_EDIT_UI1_START_INDEX,
-    UI_EDIT_UI1_NOMINAL_V,
+    UI_EDIT_UI1_START_CAPACITY,
+    UI_EDIT_UI1_NOMINAL_VOLT,
     UI_EDIT_UI1_CAPACITY,
 
     // UI2
-    UI_EDIT_UI2_SET_V,
+    UI_EDIT_UI2_VOLTAGE,
     UI_EDIT_UI2_I_LIMIT,
 
     // UI3
-    UI_EDIT_UI3_SET_I,
+    UI_EDIT_UI3_CURRENT,
     UI_EDIT_UI3_V_LIMIT,
 } UiEditField;
 
@@ -79,24 +77,17 @@ enum
 
 enum
 {
-    STATUS_CONTROL_ENABLED     = (1u << 0),
-    STATUS_MODE_SWITCH_PENDING = (1u << 1),
-    STATUS_ACTUATION_DIRTY     = (1u << 2),
-    STATUS_LOG_BACKPRESSURE    = (1u << 3),
-};
-
-enum
-{
-    MEAS_ADC_OK        = (1u << 0),
-    MEAS_ADC_SATURATED = (1u << 1),
-    MEAS_RANGE_WARN    = (1u << 2),
+    MEAS_OK          = 0,
+    MEAS_ADC_OK      = (1u << 0),
+    MEAS_RANGE_OK    = (1u << 1),
+    MEAS_TEMP_OK     = (1u << 2),
 };
 
 enum
 {
     APPLY_I2C_OK            = 0,
-    APPLY_I2C_ERR_GENERIC   = (1u << 0),
-    APPLY_I2C_ERR_RPOT      = (1u << 1),
+    APPLY_I2C_ERR_RPOT      = (1u << 0),
+    APPLY_I2C_ERR_IOEXP     = (1u << 1),
     APPLY_I2C_ERR_MODE_SW   = (1u << 2),
     APPLY_I2C_ERR_BACKLIGHT = (1u << 3),
 };
@@ -130,66 +121,69 @@ typedef struct
     uint32_t meas_flags;  // MEAS_* flags
 } MeasurementData;
 
+// Control outputs (door ControlTask gevuld; door ActuationTask uitgevoerd)
 typedef struct
 {
     uint16_t pwm_duty;          // fast output (ESP32 PWM)
     uint16_t desired_rpot_code; // slow output (I2C)
-    PowerMode desired_mode;     // slow output (via MCP23008 over I2C)
-    uint32_t control_flags;
+    PowerMode desired_mode;     // slow output (via IO expander/switch)
 } ControlData;
 
 typedef struct
 {
     uint16_t applied_rpot_code;
     PowerMode applied_mode;
-    uint32_t apply_error_flags;
+    uint32_t apply_error_flags; // APPLY_* flags
     uint32_t last_apply_t_ms;
 } ApplyStatus;
 
-// "Control" setpoints (later door ControlTask gebruikt)
 typedef struct
 {
-    float set_voltage;
-    float set_current;
-    bool  logging_enabled;
+    float   set_voltage;
+    float   set_current;
+    bool    logging_enabled;
     uint8_t curve_id;
 } ConfigData;
 
+// CurveData: 3 basiscurves voor emulatie.
+// Interpretatie:
+// - X-as: capaciteit (0..100% SOC), uniform verdeeld over CURVE_LEN.
+// - Y-as: voltage percentage (0..100). De echte spanning is: V = nominal_voltage_V * (percent/100).
 typedef struct
 {
     int16_t  curve0[CURVE_LEN];
     int16_t  curve1[CURVE_LEN];
     int16_t  curve2[CURVE_LEN];
-    uint16_t len; // altijd CURVE_LEN, maar expliciet voor veiligheid
+    uint16_t len; // altijd CURVE_LEN
 } CurveData;
 
-// UI-shared: alles wat de UI moet tonen en/of in CONFIG kan aanpassen.
+// UI-shared: CONFIG-parameters die UI mag aanpassen (en Control mag consumeren).
+// Let op: runtime-capaciteit ("waar staan we nu") staat in SystemStatus.capacity_now_mAh.
 typedef struct
 {
     UiScreen active_screen;
 
-    // UI1 (Emulate)
-    uint8_t selected_curve_id; // 0..2
-    uint8_t start_index;       // 0..(CURVE_LEN-1)
-    float   nominal_voltage;   // 0..15 (step 0.1)
-    float   capacity_mAh;      // mAh (step 1)
-    float   capacity_value;    // F (step 0.1)
+    // UI1 (Emulate) CONFIG
+    uint8_t  selected_curve_id;  // 0..2
+    float    nominal_voltage_V;  // 0..15, step 0.1
+    uint32_t capacity_set_mAh;   // totale batterij-capaciteit (CONFIG)
+    uint32_t start_capacity_mAh; // startpunt op curve (CONFIG, 0..capacity_set_mAh)
 
-    // UI2 (Const Source)
+    // UI2 (Const Source) CONFIG
     float ui2_set_voltage;     // 0..15 (step 0.1)
     float ui2_current_limit;   // A (step 0.1)
 
-    // UI3 (Const Sink)
+    // UI3 (Const Sink) CONFIG
     float ui3_set_current;     // A (step 0.1)
     float ui3_voltage_limit;   // 0..15 (step 0.1)
 } UIShared;
 
-// UI events: displayTask kan hier intent in zetten; ControlTask kan dit later consumeren.
+// UI events: displayTask kan hier "intent" in zetten; ControlTask kan dit consumeren.
 typedef struct
 {
-    uint32_t   flags;      // UI_EVT_* bitmask
-    UiEditField field;     // welk veld was relevant
-    uint32_t   seq;        // monotonic counter
+    uint32_t    flags;   // UI_EVT_* bitmask
+    UiEditField field;   // welk veld was relevant
+    uint32_t    seq;     // monotonic counter
 } UIEvents;
 
 typedef struct
@@ -199,8 +193,14 @@ typedef struct
     PowerMode   mode_pending;
 
     uint32_t status_flags;
+
+    // Faults
     uint32_t fault_current_bits;
     uint32_t fault_latched_bits;
+
+    // -------- Emulate runtime (door Control gevuld; door Display gelezen) --------
+    uint32_t runtime_sec;      // sinds start RUN
+    uint32_t capacity_now_mAh; // actuele capaciteitpositie (RUN)
 } SystemStatus;
 
 // I/O snapshot: knoppen + encoder + outputs.
@@ -250,9 +250,6 @@ void system_write_io_shared(const IOShared* io);
 void system_write_curves(const CurveData* curves);
 void system_write_ui_shared(const UIShared* ui);
 void system_write_ui_events(const UIEvents* ev);
-
-void system_set_status_flag(uint32_t flag_bits);
-void system_clear_status_flag(uint32_t flag_bits);
 
 void system_set_fault_bits(uint32_t fault_bits);
 void system_latch_fault_bits(uint32_t fault_bits);

@@ -1,4 +1,4 @@
-// measurement/measurement.h
+// measure/measure.h
 #pragma once
 
 #ifdef __cplusplus

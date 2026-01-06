@@ -169,30 +169,22 @@ static void set_btn_style(lv_obj_t* btn, lv_obj_t* lbl, bool highlight)
 
 // ---------- UI1: Emulate / laadcurve-scherm ----------
 
-// pointers bewaren voor later gebruik / updates
-static lv_obj_t* ui1_chart             = nullptr;
-static lv_chart_series_t* ui1_series   = nullptr;
+// --- UI 1 pointers ---
+static lv_obj_t* ui1_chart = nullptr;
+static lv_chart_series_t* ui1_series = nullptr;
 
-// beneden labels
-static lv_obj_t* ui1_label_meas_title  = nullptr;
 static lv_obj_t* ui1_label_v_meas      = nullptr;
 static lv_obj_t* ui1_label_i_meas      = nullptr;
-
-static lv_obj_t* ui1_label_curve_title = nullptr;
 static lv_obj_t* ui1_label_runtime     = nullptr;
 static lv_obj_t* ui1_label_capacity    = nullptr;
 static lv_obj_t* ui1_label_state       = nullptr;
 
-// rechter kolom “knoppen”
-static lv_obj_t* ui1_btn_choose_curve  = nullptr;
-static lv_obj_t* ui1_btn_choose_setp   = nullptr;
-static lv_obj_t* ui1_btn_nominal_v     = nullptr;
-static lv_obj_t* ui1_btn_capacity      = nullptr;
-static lv_obj_t* ui1_btn_reset         = nullptr;
+static lv_obj_t* ui1_lbl_btn_nominal_v = nullptr;
+static lv_obj_t* ui1_lbl_btn_capacity  = nullptr;
 
-// labels ín de knoppen (kind 0 is label)
-static lv_obj_t* ui1_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
-static lv_obj_t* ui1_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+// lijn in de grafiek
+static lv_obj_t* ui1_progress_line     = nullptr;
+static lv_point_precise_t ui1_progress_pts[2];
 
 static lv_obj_t* make_btn(lv_obj_t* parent, const char* txt)
 {
@@ -221,181 +213,151 @@ static lv_obj_t* make_btn(lv_obj_t* parent, const char* txt)
     return btn;
 }
 
-void ui1_create()
+// helper: verticale lijnpositie updaten op basis van progress_index + curve (mV)
+void ui1_update_progress_line(const DisplayModel& m)
 {
-    lv_obj_t* scr = lv_obj_create(NULL);
-    lv_scr_load(scr);
+    if (!ui1_chart || !ui1_progress_line) return;
 
+    const int point_count = m.ui1.curve_len;
+    if (point_count <= 1) return;
 
-    overlay_ensure_created();
+    int idx = m.ui1.progress_index;
+    if (idx < 0) idx = 0;
+    if (idx > point_count - 1) idx = point_count - 1;
 
-    lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+    int graph_width  = lv_obj_get_width(ui1_chart);
+    int graph_height = lv_obj_get_height(ui1_chart);
+    if (graph_width <= 1 || graph_height <= 1) return;
 
-    // Title
-    lv_obj_t* title = lv_label_create(scr);
-    lv_label_set_text(title, "emulation");
-    lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+    int x = (graph_width - 1) * idx / (point_count - 1);
 
-    // Sidebar rechts
-    lv_obj_t* sidebar = lv_obj_create(scr);
-    lv_obj_set_size(sidebar, 120, 300);
-    lv_obj_align(sidebar, LV_ALIGN_RIGHT_MID, -5, 5);
+    // waarde in mV (0..15000)
+    int16_t v = m.ui1.curve[idx];
+    if (v < 0) v = 0;
+    if (v > 15000) v = 15000;
 
-    lv_obj_set_style_bg_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BG), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(sidebar, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(sidebar, lv_color_hex(UI_COL_SIDEBAR_BORDER), LV_PART_MAIN);
-    lv_obj_set_style_border_width(sidebar, 1, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(sidebar, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_gap(sidebar, 4, LV_PART_MAIN);
+    // map mV naar pixel (0=top)
+    int y_curve = (graph_height - 1) - (graph_height - 1) * v / 15000;
 
-    lv_obj_set_flex_flow(sidebar, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(sidebar,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_START);
+    ui1_progress_pts[0].x = x;
+    ui1_progress_pts[0].y = graph_height - 2;
+    ui1_progress_pts[1].x = x;
+    ui1_progress_pts[1].y = y_curve;
 
-    lv_obj_clear_flag(sidebar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(sidebar, LV_SCROLLBAR_MODE_OFF);
-
-    ui1_btn_choose_curve = make_btn(sidebar, "Choose Curve");
-    ui1_btn_choose_setp  = make_btn(sidebar, "Choose Setpoint");
-    ui1_btn_nominal_v    = make_btn(sidebar, "Nominal voltage:\n0.00 V");
-    ui1_btn_capacity     = make_btn(sidebar, "Capacity\n0.00 mAh");
-    ui1_btn_reset        = make_btn(sidebar, "Reset");
-
-    ui1_btn_arr[0] = ui1_btn_choose_curve;
-    ui1_btn_arr[1] = ui1_btn_choose_setp;
-    ui1_btn_arr[2] = ui1_btn_nominal_v;
-    ui1_btn_arr[3] = ui1_btn_capacity;
-    ui1_btn_arr[4] = ui1_btn_reset;
-
-    for (int i = 0; i < 5; ++i) {
-        ui1_lbl_arr[i] = ui1_btn_arr[i] ? lv_obj_get_child(ui1_btn_arr[i], 0) : nullptr;
-        set_btn_style(ui1_btn_arr[i], ui1_lbl_arr[i], false);
-    }
-
-    // Chart links (ruimte vrij laten voor sidebar)
-    ui1_chart = lv_chart_create(scr);
-    lv_obj_set_size(ui1_chart, 320, 160);
-    lv_obj_align(ui1_chart, LV_ALIGN_TOP_LEFT, 10, 35);
-
-    lv_chart_set_type(ui1_chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(ui1_chart, 32);
-    lv_chart_set_range(ui1_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-
-    lv_obj_set_style_bg_color(ui1_chart, lv_color_hex(UI_COL_CHART_BG), LV_PART_MAIN);
-    lv_obj_set_style_border_color(ui1_chart, lv_color_hex(UI_COL_CHART_BORDER), LV_PART_MAIN);
-    lv_obj_set_style_border_width(ui1_chart, 1, LV_PART_MAIN);
-
-    ui1_series = lv_chart_add_series(ui1_chart, lv_color_hex(UI_COL_CHART_SERIES), LV_CHART_AXIS_PRIMARY_Y);
-    for (int i = 0; i < 32; ++i) lv_chart_set_next_value(ui1_chart, ui1_series, 0);
-
-    // ---- Onderste tekstblokken: RELATIEF AAN DE CHART ----
-    const int under_chart_y = lv_obj_get_y(ui1_chart) + lv_obj_get_height(ui1_chart) + 10;
-
-    // measurements title (onder chart)
-    ui1_label_meas_title = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_meas_title, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_meas_title, "measurements");
-    lv_obj_align_to(ui1_label_meas_title, ui1_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
-
-    // voltage (onder measurements title)
-    ui1_label_v_meas = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_v_meas, "voltage:\n0.00");
-    lv_obj_align_to(ui1_label_v_meas, ui1_label_meas_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 6);
-
-    // ampere (rechts naast voltage)
-    ui1_label_i_meas = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_i_meas, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_i_meas, "ampere:\n0.00");
-    lv_obj_align_to(ui1_label_i_meas, ui1_label_v_meas, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
-
-    // loadcurve title (onder voltage blok)
-    ui1_label_curve_title = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_curve_title, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_curve_title, "loadcurve");
-    lv_obj_align_to(ui1_label_curve_title, ui1_label_v_meas, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
-
-    // runtime (onder loadcurve title) -> mm:ss
-    ui1_label_runtime = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_runtime, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_runtime, "runtime:\n00:00");
-    lv_obj_align_to(ui1_label_runtime, ui1_label_curve_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 6);
-
-    // capacity (rechts naast runtime)
-    ui1_label_capacity = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_capacity, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_capacity, "capacity:\n0.00 mAh");
-    lv_obj_align_to(ui1_label_capacity, ui1_label_runtime, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
-
-    // state (rechts naast capacity)
-    ui1_label_state = lv_label_create(scr);
-    lv_obj_set_style_text_color(ui1_label_state, lv_color_hex(UI_COL_TEXT), 0);
-    lv_label_set_text(ui1_label_state, "state:\nload");
-    lv_obj_align_to(ui1_label_state, ui1_label_capacity, LV_ALIGN_OUT_RIGHT_TOP, 40, 0);
-
-
-    ui_overlay_hide();
+    lv_line_set_points(ui1_progress_line, ui1_progress_pts, 2);
 }
 
-void ui1_update(const DisplayModel& m)
-{
-    // curve -> chart
-    if (ui1_chart && ui1_series) {
-        lv_chart_set_point_count(ui1_chart, 32);
-        for (int i = 0; i < 32; ++i) {
-            int v = 0;
-            if (i < m.ui1.curve_len) v = m.ui1.curve[i];
-            if (v < 0) v = 0;
-            if (v > 100) v = 100;
-            lv_chart_set_value_by_id(ui1_chart, ui1_series, i, v);
-        }
-        lv_chart_refresh(ui1_chart);
-    }
+void ui1_create() {
+  lv_obj_t* scr = lv_screen_active();
+  lv_obj_clean(scr);
 
-    if (ui1_label_v_meas) {
-        char b[32];
-        snprintf(b, sizeof(b), "voltage:\n%.2f", (double)m.ui1.voltage_val);
-        lv_label_set_text(ui1_label_v_meas, b);
-    }
-    if (ui1_label_i_meas) {
-        char b[32];
-        snprintf(b, sizeof(b), "ampere:\n%.2f", (double)m.ui1.current_val);
-        lv_label_set_text(ui1_label_i_meas, b);
-    }
-    if (ui1_label_runtime) {
-        uint32_t total = m.ui1.runtime_sec;
-        uint32_t mm = total / 60;
-        uint32_t ss = total % 60;
+  lv_obj_set_style_bg_color(scr, lv_color_hex(UI_COL_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-        char b[32];
-        snprintf(b, sizeof(b), "runtime:\n%02lu:%02lu", (unsigned long)mm, (unsigned long)ss);
-        lv_label_set_text(ui1_label_runtime, b);
-    }
+  // Titel
+  lv_obj_t* title = lv_label_create(scr);
+  lv_label_set_text(title, "Emulate");
+  lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
-    if (ui1_label_capacity) {
-        char b[40];
-        snprintf(b, sizeof(b), "capacity:\n%.2f mAh", (double)m.ui1.capacity_val);
-        lv_label_set_text(ui1_label_capacity, b);
-    }
-    if (ui1_label_state) {
-        lv_label_set_text(ui1_label_state, m.ui1.state_load ? "state:\nload" : "state:\nunload");
-    }
+  // Chart links
+  ui1_chart = lv_chart_create(scr);
+  lv_obj_set_size(ui1_chart, 320, 160);
+  lv_obj_align(ui1_chart, LV_ALIGN_TOP_LEFT, 10, 35);
 
-    // softkey tekst: nominal voltage + capacity knop
-    if (ui1_lbl_arr[2]) {
-        char b[40];
-        snprintf(b, sizeof(b), "Nominal voltage:\n%.2f V", (double)m.ui1.nominal_v_val);
-        lv_label_set_text(ui1_lbl_arr[2], b);
+  lv_chart_set_type(ui1_chart, LV_CHART_TYPE_LINE);
+  lv_chart_set_point_count(ui1_chart, 32);
+  lv_chart_set_range(ui1_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 15000); // <-- mV range
+
+  lv_obj_set_style_bg_color(ui1_chart, lv_color_hex(UI_COL_CHART_BG), LV_PART_MAIN);
+  lv_obj_set_style_border_color(ui1_chart, lv_color_hex(UI_COL_CHART_BORDER), LV_PART_MAIN);
+  lv_obj_set_style_border_width(ui1_chart, 1, LV_PART_MAIN);
+
+  ui1_series = lv_chart_add_series(ui1_chart, lv_color_hex(UI_COL_CHART_SERIES), LV_CHART_AXIS_PRIMARY_Y);
+  for (int i = 0; i < 32; ++i) lv_chart_set_next_value(ui1_chart, ui1_series, 0);
+
+  // progress line object
+  ui1_progress_line = lv_line_create(ui1_chart);
+  lv_obj_set_style_line_width(ui1_progress_line, 2, 0);
+  lv_obj_set_style_line_color(ui1_progress_line, lv_color_hex(UI_COL_CHART_LINE), 0);
+  ui1_progress_pts[0].x = 0; ui1_progress_pts[0].y = 0;
+  ui1_progress_pts[1].x = 0; ui1_progress_pts[1].y = 10;
+  lv_line_set_points(ui1_progress_line, ui1_progress_pts, 2);
+
+  // labels (laat jouw bestaande posities intact; alleen inhoud is mAh)
+  ui1_label_v_meas = lv_label_create(scr);
+  lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_TEXT), 0);
+  lv_label_set_text(ui1_label_v_meas, "Voltage = 0.00 V");
+  lv_obj_align(ui1_label_v_meas, LV_ALIGN_BOTTOM_LEFT, 10, -45);
+
+  ui1_label_i_meas = lv_label_create(scr);
+  lv_obj_set_style_text_color(ui1_label_i_meas, lv_color_hex(UI_COL_TEXT), 0);
+  lv_label_set_text(ui1_label_i_meas, "Ampere = 0.00 A");
+  lv_obj_align(ui1_label_i_meas, LV_ALIGN_BOTTOM_LEFT, 140, -45);
+
+  ui1_label_runtime = lv_label_create(scr);
+  lv_obj_set_style_text_color(ui1_label_runtime, lv_color_hex(UI_COL_TEXT), 0);
+  lv_label_set_text(ui1_label_runtime, "Run-time = 00:00");
+  lv_obj_align(ui1_label_runtime, LV_ALIGN_BOTTOM_LEFT, 10, -20);
+
+  ui1_label_capacity = lv_label_create(scr);
+  lv_obj_set_style_text_color(ui1_label_capacity, lv_color_hex(UI_COL_TEXT), 0);
+  lv_label_set_text(ui1_label_capacity, "Capacity = 0 mAh");
+  lv_obj_align(ui1_label_capacity, LV_ALIGN_BOTTOM_LEFT, 140, -20);
+
+  ui1_label_state = lv_label_create(scr);
+  lv_obj_set_style_text_color(ui1_label_state, lv_color_hex(UI_COL_TEXT), 0);
+  lv_label_set_text(ui1_label_state, "Current state = load");
+  lv_obj_align(ui1_label_state, LV_ALIGN_BOTTOM_LEFT, 280, -20);
+
+  // Knoppen labels (als jij die al had: alleen references houden)
+  // Zorg dat ui1_lbl_btn_nominal_v en ui1_lbl_btn_capacity in jouw create gevuld worden,
+  // zodat update() ze kan aanpassen.
+}
+
+void ui1_update(const DisplayModel& m) {
+  char buf[64];
+
+  // curve in chart
+  if (ui1_chart && ui1_series) {
+    const int n = (m.ui1.curve_len > 32) ? 32 : m.ui1.curve_len;
+    for (int i = 0; i < n; ++i) {
+      lv_chart_set_value_by_id(ui1_chart, ui1_series, i, m.ui1.curve[i]);
     }
-    if (ui1_lbl_arr[3]) {
-        char b[40];
-        snprintf(b, sizeof(b), "Capacity\n%.2f mAh", (double)m.ui1.btn_capacity_val);
-        lv_label_set_text(ui1_lbl_arr[3], b);
-    }
+    lv_chart_refresh(ui1_chart);
+  }
+
+  snprintf(buf, sizeof(buf), "Voltage = %.2f V", m.ui1.voltage_val);
+  if (ui1_label_v_meas) lv_label_set_text(ui1_label_v_meas, buf);
+
+  snprintf(buf, sizeof(buf), "Ampere = %.2f A", m.ui1.current_val);
+  if (ui1_label_i_meas) lv_label_set_text(ui1_label_i_meas, buf);
+
+  uint32_t minutes = m.ui1.runtime_sec / 60;
+  uint32_t seconds = m.ui1.runtime_sec % 60;
+  snprintf(buf, sizeof(buf), "Run-time = %02u:%02u", (unsigned)minutes, (unsigned)seconds);
+  if (ui1_label_runtime) lv_label_set_text(ui1_label_runtime, buf);
+
+  snprintf(buf, sizeof(buf), "Capacity = %.0f mAh", m.ui1.capacity_val);
+  if (ui1_label_capacity) lv_label_set_text(ui1_label_capacity, buf);
+
+  if (ui1_label_state) {
+    lv_label_set_text(ui1_label_state,
+                      m.ui1.state_load ? "Current state = load"
+                                       : "Current state = unload");
+  }
+
+  ui1_update_progress_line(m);
+
+  // buttons (als labels bestaan)
+  if (ui1_lbl_btn_nominal_v) {
+    snprintf(buf, sizeof(buf), "Nominal voltage:\n%.2f V", m.ui1.nominal_v_val);
+    lv_label_set_text(ui1_lbl_btn_nominal_v, buf);
+  }
+  if (ui1_lbl_btn_capacity) {
+    snprintf(buf, sizeof(buf), "Capacity\n%.0f mAh", m.ui1.btn_capacity_val);
+    lv_label_set_text(ui1_lbl_btn_capacity, buf);
+  }
 }
 
 
@@ -707,6 +669,12 @@ void ui3_update(const DisplayModel& m)
 // =========================
 // Public softkey helper API (legacy: key_index = 1..5)
 // =========================
+
+static lv_obj_t* ui1_btn_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static lv_obj_t* ui1_lbl_arr[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+
+
+
 static void softkey_set(uint8_t idx, bool on, lv_obj_t* btn_arr[5], lv_obj_t* lbl_arr[5])
 {
     if (idx < 1 || idx > 5) return;
