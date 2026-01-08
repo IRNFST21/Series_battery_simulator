@@ -29,11 +29,11 @@ static void backlight_init_and_on()
     system_unlock_i2c();
 
     if (!ok) {
-        Serial.println("AW9523 niet gevonden! (backlight)");
+        Serial.println("AW9523 not found (backlight)");
         return;
     }
 
-    Serial.println("AW9523 OK, backlight aan");
+    Serial.println("AW9523 OK, backlight on");
 
     system_lock_i2c();
     for (auto pin : BL_PINS) {
@@ -104,8 +104,8 @@ static ActiveUI g_current_ui = ActiveUI::UI1;
 static DisplayModel g_model;
 
 // I/O mapping (IOShared.buttons_*):
-// - 0..3: mode/start-stop (wordt later door ControlTask gebruikt)
-// - 4..8: softkeys (rechts)
+// - 0..3: mode/start-stop (used by ControlTask)
+// - 4..8: softkeys (right side)
 // - 10: encoder press (confirm)
 // - 11: encoder long press (cancel)
 static constexpr uint32_t BTN_SOFT_1    = (1u << 4);
@@ -119,7 +119,7 @@ static constexpr uint32_t BTN_ENC_LONG  = (1u << 11);
 static constexpr uint32_t DISPLAY_BTN_MASK =
     BTN_SOFT_1 | BTN_SOFT_2 | BTN_SOFT_3 | BTN_SOFT_4 | BTN_SOFT_5 | BTN_ENC_PRESS | BTN_ENC_LONG;
 
-// Edit context (alleen CONFIG)
+// Edit context (CONFIG mode only)
 typedef enum
 {
     EDIT_NONE = 0,
@@ -216,8 +216,8 @@ static void fill_ui1_curve(UI1Model& ui1, const SystemSnapshot& s)
     }
 
     // Progress index:
-    // - in CONFIG: marker = start_capacity_mAh
-    // - in ACTIVE: marker = status.capacity_now_mAh
+    // - CONFIG: marker = start_capacity_mAh
+    // - ACTIVE: marker = status.capacity_now_mAh
     const uint32_t cap_total = (s.ui.capacity_set_mAh == 0) ? 1u : s.ui.capacity_set_mAh;
     const uint32_t marker = (s.status.state == SYS_STATE_ACTIVE) ? s.status.capacity_now_mAh : s.ui.start_capacity_mAh;
     uint32_t clamped = marker;
@@ -239,12 +239,12 @@ static void model_from_system(DisplayModel& m, const SystemSnapshot& s)
     m.ui1.voltage_val = s.meas.v_out;
     m.ui1.current_val = (s.status.mode_current == POWER_MODE_SINK) ? s.meas.i_sink : s.meas.i_source;
 
-    // Runtime label (mm:ss formatting gebeurt in ui_screens)
+    // Runtime label (mm:ss formatting in ui_screens)
     m.ui1.runtime_sec = s.status.runtime_sec;
 
     // Capacity label:
-    // - in CONFIG show startpoint
-    // - in ACTIVE show current position
+    // - CONFIG: show startpoint
+    // - ACTIVE: show current position
     m.ui1.capacity_val = (s.status.state == SYS_STATE_ACTIVE) ? s.status.capacity_now_mAh : s.ui.start_capacity_mAh;
 
     // Button display values
@@ -269,7 +269,7 @@ static void model_from_system(DisplayModel& m, const SystemSnapshot& s)
 // -----------------------------------------------------------------------------
 static void overlay_for_edit(EditField f, const UIShared& ui)
 {
-    const char* hint = "Draai: wijzig | Press: OK | Long: Cancel";
+    const char* hint = "Turn: adjust | Press: OK | Long: Cancel";
     char title[32];
     char value[48];
     title[0] = 0;
@@ -328,7 +328,7 @@ static void begin_edit(EditField f, int softkey_idx, const SystemSnapshot& s)
 
     overlay_for_edit(f, s.ui);
 
-    // Event voor ControlTask (later)
+    // Event for ControlTask
     UIEvents ev = s.ui_events;
     ev.flags |= UI_EVT_EDIT_STARTED;
     ev.field = to_ui_edit_field(f);
@@ -434,7 +434,7 @@ static void apply_encoder_delta_to_ui(EditField f, int delta, UIShared* ui)
 
 static void handle_inputs(const SystemSnapshot& s)
 {
-    // Alleen in CONFIG mag display setpoints schrijven.
+    // CONFIG mode only: display can write setpoints
     if (s.status.state != SYS_STATE_CONFIG) {
         if (g_edit != EDIT_NONE) {
             ui_overlay_hide();
@@ -449,7 +449,7 @@ static void handle_inputs(const SystemSnapshot& s)
     const uint32_t raw     = s.io.buttons_raw_bits;
     const int enc_delta = s.io.enc_delta_accum;
 
-    // Start edit via softkeys
+    // Edit via softkeys when not in edit
     if (g_edit == EDIT_NONE) {
         if ((changed & BTN_SOFT_1) && (raw & BTN_SOFT_1)) {
             if (g_current_ui == ActiveUI::UI1) begin_edit(EDIT_UI1_CURVE, 0, s);
@@ -504,11 +504,11 @@ static void handle_inputs(const SystemSnapshot& s)
 // -----------------------------------------------------------------------------
 // Task
 // -----------------------------------------------------------------------------
-extern "C" void displayTask(void* pvParameters)
+void displayTask(void* pvParameters)
 {
     (void)pvParameters;
 
-    Serial.println("Display task gestart");
+    Serial.println("Display task started");
 
     backlight_init_and_on();
     ili9488_init();
@@ -518,7 +518,7 @@ extern "C" void displayTask(void* pvParameters)
     Serial.println("LVGL port init");
     lvgl_port_init();
 
-    // Start UI1
+    // Init UI1
     g_current_ui = ActiveUI::UI1;
     ui1_create();
 

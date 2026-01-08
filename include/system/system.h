@@ -21,7 +21,7 @@ extern "C" {
 
 typedef enum
 {
-    SYS_STATE_CONFIG = 0,   // UI mag setpoints/curves aanpassen; emulatie staat stil
+    SYS_STATE_CONFIG = 0,  
     SYS_STATE_READY,
     SYS_STATE_ACTIVE,       // RUN
     SYS_STATE_ERROR
@@ -41,7 +41,7 @@ typedef enum
     UI_SCREEN_UI3,     // Const Sink
 } UiScreen;
 
-// Welke parameter wordt bewerkt in CONFIG (voor edit-overlay/UX)
+
 typedef enum
 {
     UI_EDIT_NONE = 0,
@@ -121,7 +121,7 @@ typedef struct
     uint32_t meas_flags;  // MEAS_* flags
 } MeasurementData;
 
-// Control outputs (door ControlTask gevuld; door ActuationTask uitgevoerd)
+// Control outputs 
 typedef struct
 {
     uint16_t pwm_duty;          // fast output (ESP32 PWM)
@@ -145,20 +145,20 @@ typedef struct
     uint8_t curve_id;
 } ConfigData;
 
-// CurveData: 3 basiscurves voor emulatie.
-// Interpretatie:
-// - X-as: capaciteit (0..100% SOC), uniform verdeeld over CURVE_LEN.
-// - Y-as: voltage percentage (0..100). De echte spanning is: V = nominal_voltage_V * (percent/100).
+// CurveData: 3 base curves.
+// Notes:
+// - X-axis: capacity (0..100% SOC), uniformly spaced over CURVE_LEN.
+// - Y-axis: voltage percent (0..100). V = nominal_voltage_V * (percent/100).
 typedef struct
 {
     int16_t  curve0[CURVE_LEN];
     int16_t  curve1[CURVE_LEN];
     int16_t  curve2[CURVE_LEN];
-    uint16_t len; // altijd CURVE_LEN
+    uint16_t len; // always CURVE_LEN
 } CurveData;
 
-// UI-shared: CONFIG-parameters die UI mag aanpassen (en Control mag consumeren).
-// Let op: runtime-capaciteit ("waar staan we nu") staat in SystemStatus.capacity_now_mAh.
+// UIShared: CONFIG params editable by UI (consumed by Control).
+// Runtime capacity (current position) lives in SystemStatus.capacity_now_mAh.
 typedef struct
 {
     UiScreen active_screen;
@@ -166,8 +166,8 @@ typedef struct
     // UI1 (Emulate) CONFIG
     uint8_t  selected_curve_id;  // 0..2
     float    nominal_voltage_V;  // 0..15, step 0.1
-    uint32_t capacity_set_mAh;   // totale batterij-capaciteit (CONFIG)
-    uint32_t start_capacity_mAh; // startpunt op curve (CONFIG, 0..capacity_set_mAh)
+    uint32_t capacity_set_mAh;   // total battery capacity (CONFIG)
+    uint32_t start_capacity_mAh; // curve setpoint (CONFIG, 0..capacity_set_mAh)
 
     // UI2 (Const Source) CONFIG
     float ui2_set_voltage;     // 0..15 (step 0.1)
@@ -178,11 +178,11 @@ typedef struct
     float ui3_voltage_limit;   // 0..15 (step 0.1)
 } UIShared;
 
-// UI events: displayTask kan hier "intent" in zetten; ControlTask kan dit consumeren.
+// UI events: set by display, consumed by Control.
 typedef struct
 {
     uint32_t    flags;   // UI_EVT_* bitmask
-    UiEditField field;   // welk veld was relevant
+    UiEditField field;   // which field
     uint32_t    seq;     // monotonic counter
 } UIEvents;
 
@@ -198,12 +198,12 @@ typedef struct
     uint32_t fault_current_bits;
     uint32_t fault_latched_bits;
 
-    // -------- Emulate runtime (door Control gevuld; door Display gelezen) --------
-    uint32_t runtime_sec;      // sinds start RUN
-    uint32_t capacity_now_mAh; // actuele capaciteitpositie (RUN)
+    // Emulate runtime (filled by Control; read by Display)
+    uint32_t runtime_sec;      // since RUN start
+    uint32_t capacity_now_mAh; // current capacity position (RUN)
 } SystemStatus;
 
-// I/O snapshot: knoppen + encoder + outputs.
+// I/O snapshot: buttons + encoder + outputs.
 typedef struct
 {
     uint32_t buttons_raw_bits;
@@ -222,8 +222,11 @@ typedef struct
     ConfigData      cfg;
     SystemStatus    status;
     IOShared        io;
+    
+
 
     CurveData       curves;
+
     UIShared        ui;
     UIEvents        ui_events;
 

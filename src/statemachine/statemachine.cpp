@@ -7,7 +7,6 @@
 #include "system/system.h"
 #include "statemachine/statemachine.h"
 
-// button bits (moeten matchen met ioExpanderTask mapping)
 static constexpr uint32_t BTN_MODE_EMULATE = (1u << 0);
 static constexpr uint32_t BTN_MODE_SINK    = (1u << 1);
 static constexpr uint32_t BTN_MODE_SOURCE  = (1u << 2);
@@ -22,7 +21,7 @@ static void apply_mode(SystemSnapshot& s, PowerMode mode, UiScreen screen)
     s.ui.active_screen = screen;
     system_write_ui_shared(&s.ui);
 
-    // status mode (control/actuation gaat dit later “echt” toepassen)
+    
     s.status.mode_pending = mode;
     s.status.mode_current = mode;
     system_write_status(&s.status);
@@ -48,8 +47,7 @@ static void handle_start_pause(SystemSnapshot& s, uint32_t changed)
 {
     if ((changed & BTN_START_PAUSE) == 0) return;
 
-    // Jij: start/pauze is ACTIVE <-> READY
-    // We laten CONFIG -> READY ook toe (handig in opstart).
+
     if (s.status.state == SYS_STATE_ACTIVE) {
         s.status.state = SYS_STATE_READY;
     } else if (s.status.state == SYS_STATE_READY) {
@@ -73,17 +71,17 @@ extern "C" void statemachineTask(void* pvParameters)
         SystemSnapshot s;
         system_read_snapshot(&s);
 
-        // Fault -> ERROR (basic)
+        // Fault -> ERROR
         if (s.status.fault_latched_bits != 0 && s.status.state != SYS_STATE_ERROR) {
             s.status.state = SYS_STATE_ERROR;
             system_write_status(&s.status);
         }
 
-        // Lees button edges en consumeer ze
+        
         const uint32_t changed = s.io.buttons_changed_bits & MODE_BTN_MASK;
         if (changed != 0)
         {
-            // eerst mode-select, dan start/pause
+            
             handle_mode_buttons(s, changed);
             handle_start_pause(s, changed);
 

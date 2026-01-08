@@ -26,7 +26,7 @@ static constexpr uint8_t MCP23008_ADDR = 0x21; // A2 A1 = GND, A0 = 3v3
 // 0..7 = GPA0..7, 8..15 = GPB0..7
 // ============================
 
-// Inputs (buttons) - actief-laag
+// Inputs (buttons) - active-low
 static constexpr uint8_t PIN_EMULATE = 8;   // GPB0 -> bit 0
 static constexpr uint8_t PIN_SINK    = 9;   // GPB1 -> bit 1
 static constexpr uint8_t PIN_SOURCE  = 10;  // GPB2 -> bit 2
@@ -156,8 +156,8 @@ static bool read_mcp23008_inputs(bool* enc_sw_pressed, bool* sd_cdwp_low)
     const uint8_t g = mcp08.readGPIO();
     system_unlock_i2c();
 
-    *enc_sw_pressed = ((g & (1u << PIN_ENC_SW)) == 0);   // actief-laag
-    *sd_cdwp_low    = ((g & (1u << PIN_SD_CDWP)) == 0);  // actief-laag (aanname)
+    *enc_sw_pressed = ((g & (1u << PIN_ENC_SW)) == 0);   // active-low
+    *sd_cdwp_low    = ((g & (1u << PIN_SD_CDWP)) == 0);  // active-low 
     return true;
 }
 
@@ -180,7 +180,7 @@ static void update_outputs_from_system(const SystemSnapshot& s)
 
     system_lock_i2c();
     mcp08.digitalWrite(PIN_SRC_ENABLE, src_enable ? HIGH : LOW);
-    mcp08.digitalWrite(PIN_LCD_RESET,  HIGH); // default: niet resetten
+    mcp08.digitalWrite(PIN_LCD_RESET,  HIGH);
     mcp08.digitalWrite(PIN_FAN_MODE,   fan_hard ? HIGH : LOW);
     system_unlock_i2c();
 }
@@ -206,7 +206,7 @@ static bool ioexpander_init()
 
     system_lock_i2c();
     for (uint8_t p : in_pins17) {
-        mcp17.pinMode(p, INPUT_PULLUP);  // <-- FIX: no pullUp()
+        mcp17.pinMode(p, INPUT_PULLUP);
     }
 
     // LED outputs
@@ -338,7 +338,7 @@ extern "C" void ioExpanderTask(void* pvParameters)
             if (held_ms >= ENC_LONG_MS) {
                 enc_long_sent = true;
                 long_event_changed |= BIT_ENC_LONG;
-                long_event_raw     |= BIT_ENC_LONG; // zodat raw&LONG waar is in die cycle
+                long_event_raw     |= BIT_ENC_LONG; // So raw&LONG is true in that cycle
             }
         }
 

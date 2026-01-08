@@ -10,52 +10,52 @@
 // UI1 (Emulate)
 struct UI1Model
 {
-    int16_t curve[32];       // curve values for chart (bij jou: mV of 0..range)
-    int     curve_len;       // aantal punten (<=32)
+    int16_t curve[32];       // curve values for chart (e.g. mV)
+    int     curve_len;       // number of points (<=32)
     int     progress_index;  // marker index 0..curve_len-1
 
-    float   voltage_val;     // gemeten V
-    float   current_val;     // gemeten A
+    float   voltage_val;     // measured V
+    float   current_val;     // measured A
 
-    // Let op: dit is "marker-capacity" (CONFIG=start, RUN=now) in mAh
-    float   capacity_val;    // mAh (positie op curve)
-    uint32_t runtime_sec;    // runtime in seconden
+    // Note: marker capacity (CONFIG=start, RUN=now) in mAh
+    float   capacity_val;    // mAh (position on curve)
+    uint32_t runtime_sec;    // runtime in seconds
 
-    bool    state_load;      // true=load/sink, false=unload/source (label)
+    bool    state_load;      // true=load/sink, false=unload/source
 
-    // Config weergave (knoppen)
-    float   nominal_v_val;       // V
-    float   btn_capacity_val;    // mAh (totale ingestelde capaciteit)
+    // Config display (buttons)
+    float   nominal_v_val;       // V (button)
+    float   btn_capacity_val;    // mAh (total set capacity)
 };
 
 // UI2 (Constant source)
 struct UI2Model
 {
     // setpoints
-    float set_voltage;      // V (wat je instelt)
-    float current_limit;    // A (instel limiet)
+    float set_voltage;      // V (setpoint)
+    float current_limit;    // A (limit)
 
-    // metingen
-    float meas_voltage;     // V (optioneel)
-    float meas_ampere;      // A (wordt gebruikt in ui_screens.cpp!)
+    // measurements
+    float meas_voltage;     // V (optional)
+    float meas_ampere;      // A (used in ui_screens.cpp)
 
-    // gauge schaal
-    float vmax;             // V max voor arc (wordt gebruikt in ui_screens.cpp!)
+    // gauge scale
+    float vmax;             // V max for arc (used in ui_screens.cpp)
 };
 
 // UI3 (Constant sink)
 struct UI3Model
 {
     // setpoints
-    float set_ampere;       // A (wordt gebruikt in ui_screens.cpp!)
-    float voltage_limit;    // V limiet
+    float set_ampere;       // A (used in ui_screens.cpp)
+    float voltage_limit;    // V limit
 
-    // metingen
-    float meas_voltage;     // V (wordt gebruikt in ui_screens.cpp!)
-    float meas_current;     // A (optioneel)
+    // measurements
+    float meas_voltage;     // V (used in ui_screens.cpp)
+    float meas_current;     // A (optional)
 
-    // gauge schaal
-    float imax;             // A max voor arc (wordt gebruikt in ui_screens.cpp!)
+    // gauge scale
+    float imax;             // A max for arc (used in ui_screens.cpp)
 };
 
 struct DisplayModel
@@ -77,7 +77,7 @@ void ui2_update(const DisplayModel& m);
 void ui3_update(const DisplayModel& m);
 
 // --------------------
-// Softkey helpers (display.cpp gebruikt deze)
+// Softkey helpers (used by display.cpp)
 // --------------------
 void ui1_softkey_set_active(int idx, bool active); // idx 0..4
 void ui2_softkey_set_active(int idx, bool active);
@@ -87,7 +87,7 @@ void ui1_softkey_clear_all();
 void ui2_softkey_clear_all();
 void ui3_softkey_clear_all();
 
-// legacy (idx 1..5) als je ze nog gebruikt
+// legacy (idx 1..5) if still needed
 void ui1_set_softkey_highlight(uint8_t key_index, bool on);
 void ui2_set_softkey_highlight(uint8_t key_index, bool on);
 void ui3_set_softkey_highlight(uint8_t key_index, bool on);
@@ -96,7 +96,7 @@ void ui1_set_softkey_text(uint8_t key_index, const char* text);
 void ui2_set_softkey_text(uint8_t key_index, const char* text);
 void ui3_set_softkey_text(uint8_t key_index, const char* text);
 
-// progress line update (als je die extern wil kunnen callen; mag ook static blijven in cpp)
+// progress line update (callable externally; may remain static in cpp)
 void ui1_update_progress_line(const DisplayModel& m);
 void ui_overlay_hide();
 bool ui_overlay_is_visible();

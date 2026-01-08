@@ -1,8 +1,8 @@
-// ili9488_driver.hpp - simpele, stabiele driver voor ILI9488 + LVGL
+// ili9488_driver.hpp - simple, reliable ILI9488 driver for LVGL
 #pragma once
 #include <Arduino.h>
 
-// ==== PIN DEFINITIES (pas aan als jouw PCB anders is) ====
+// ==== PIN DEFINITIONS (adjust if your PCB differs) ====
 #define LCD_D0   10
 #define LCD_D1   11
 #define LCD_D2   12
@@ -12,10 +12,10 @@
 #define LCD_D6   16
 #define LCD_D7   17
 
-#define LCD_CS   2     // CS van het LCD
+#define LCD_CS   2     // LCD CS
 #define LCD_RS   45    // RS / DC
 #define LCD_WR   20    // WR
-#define LCD_RST  -1    // zet op GPIO als je RST aan een pin hebt, anders -1 (aan 3V3)
+#define LCD_RST  -1    // set GPIO if RST is wired, else -1 (tied to 3V3)
 
 constexpr uint16_t ILI9488_WIDTH  = 320;
 constexpr uint16_t ILI9488_HEIGHT = 480;
@@ -112,7 +112,7 @@ inline void ili9488_set_window(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 
 inline void ili9488_init()
 {
-  // Datapinnen + control-pinnen als output
+  // Data + control pins as outputs
   for (int i = 0; i < 8; i++) {
     pinMode(lcd_data_pins[i], OUTPUT);
     digitalWrite(lcd_data_pins[i], LOW);
@@ -131,7 +131,7 @@ inline void ili9488_init()
   digitalWrite(LCD_RST, HIGH);
   delay(120);
 #else
-  // RST hard aan 3V3
+  // RST tied to 3V3
   delay(120);
 #endif
 
@@ -143,15 +143,15 @@ inline void ili9488_init()
   lcd_writeCommand(0x11);
   delay(120);
 
-  // 16-bit pixel formaat RGB565
+  // 16-bit pixel format RGB565
   lcd_writeCommand(0x3A);
   lcd_writeData(0x55);
 
-  // Memory Access Control: portret, geen spiegeling, RGB (BGR=0, MV=0)
+  // Memory Access Control: portrait, no mirroring, RGB (BGR=0, MV=0)
   // lcd_writeCommand(0x36);
   // lcd_writeData(0x48);
 
-  // Display inversion OFF (heel belangrijk om zwart/wit omkering uit te zetten)
+  // Display inversion OFF (prevents black/white inversion)
   lcd_writeCommand(0x20);  // of 0x21, afhankelijk van jouw werkende situatie
 
   // Display on
@@ -163,7 +163,7 @@ inline void ili9488_init()
 
 inline void ili9488_fill_screen(uint16_t color)
 {
-  // compenseer paneel-inversie
+  // compensate panel inversion
   uint16_t c = ~color;
 
   ili9488_set_window(0, 0, 320, 480);
@@ -174,7 +174,7 @@ inline void ili9488_fill_screen(uint16_t color)
 }
 
 
-// LVGL buffer schrijven: px_map zijn bytes in RGB565 (little endian)
+// LVGL buffer write: px_map contains bytes in RGB565 (little endian)
 inline void ili9488_push_pixels(uint16_t x, uint16_t y,
                                 uint16_t w, uint16_t h,
                                 const uint8_t *px_map)
@@ -186,7 +186,7 @@ inline void ili9488_push_pixels(uint16_t x, uint16_t y,
     uint8_t lo = px_map[2 * i + 0];
     uint8_t hi = px_map[2 * i + 1];
 
-    // maak 16-bit kleur uit LVGL
+    // form 16-bit color from LVGL
     uint16_t c = (static_cast<uint16_t>(hi) << 8) | lo;
 
     // compenseer paneel-inversie

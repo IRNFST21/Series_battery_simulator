@@ -20,41 +20,39 @@
 #define UI_COL_UI2_BG          0x000000   // background for UI2
 #define UI_COL_UI2_TEXT        0xEDBE0E   // UI2 text
 
-// =========================
-// Overlay (modal kaartje) - TOP LAYER + shift links voor sidebar
-// =========================
+// Overlay (modal card) - TOP LAYER, shifted left for sidebar
 static lv_obj_t* ov_root  = nullptr;
 static lv_obj_t* ov_card  = nullptr;
 static lv_obj_t* ov_title = nullptr;
 static lv_obj_t* ov_value = nullptr;
 static lv_obj_t* ov_hint  = nullptr;
 
-// Reserveer rechts ruimte voor 5 knoppen kolom (sidebar).
-// sidebar = 120px + marge
+// Reserve right space for 5 button column (sidebar)
+// sidebar = 120px + margin
 static constexpr int UI_RIGHT_RESERVED_PX = 130;
 static constexpr int OVERLAY_X_OFFSET = -(UI_RIGHT_RESERVED_PX / 2);
 static constexpr int OVERLAY_Y_OFFSET = 0;
 
 static void overlay_ensure_created()
 {
-    // TOP LAYER, zodat overlay altijd vóór alles staat
+    // TOP LAYER, overlay always on top
     lv_obj_t* top = lv_layer_top();
     if (ov_root && lv_obj_get_parent(ov_root) == top) return;
 
-    // Root overlay (full-screen) op top-layer
+    // Root overlay (full-screen) on top-layer
     ov_root = lv_obj_create(top);
     lv_obj_set_size(ov_root, LV_PCT(100), LV_PCT(100));
     lv_obj_align(ov_root, LV_ALIGN_CENTER, 0, 0);
     lv_obj_clear_flag(ov_root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(ov_root, LV_SCROLLBAR_MODE_OFF);
 
-    // Semi-transparante achtergrond
+    // Semi-transparent background
     lv_obj_set_style_bg_color(ov_root, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ov_root, LV_OPA_70, LV_PART_MAIN);
     lv_obj_set_style_border_width(ov_root, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(ov_root, 0, LV_PART_MAIN);
 
-    // Card in het midden, maar verschoven naar links (weg van sidebar)
+    // Card in center, shifted left (away from sidebar)
     ov_card = lv_obj_create(ov_root);
     lv_obj_set_size(ov_card, 300, 150);
     lv_obj_align(ov_card, LV_ALIGN_CENTER, OVERLAY_X_OFFSET, OVERLAY_Y_OFFSET);
@@ -77,21 +75,21 @@ static void overlay_ensure_created()
     lv_obj_set_style_text_font(ov_title, &lv_font_montserrat_14, 0);
     lv_obj_align(ov_title, LV_ALIGN_TOP_MID, 0, 0);
 
-    // Value (groot)
+    // Value (large)
     ov_value = lv_label_create(ov_card);
     lv_label_set_text(ov_value, "Value");
     lv_obj_set_style_text_color(ov_value, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_set_style_text_font(ov_value, &lv_font_montserrat_18, 0);
     lv_obj_align(ov_value, LV_ALIGN_CENTER, 0, -5);
 
-    // Hint (klein)
+    // Hint (small)
     ov_hint = lv_label_create(ov_card);
     lv_label_set_text(ov_hint, "Rotate = change | Press = OK | Long = Cancel");
     lv_obj_set_style_text_color(ov_hint, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_set_style_text_font(ov_hint, &lv_font_montserrat_12, 0);
     lv_obj_align(ov_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
 
-    // Start verborgen
+    // Start hidden
     lv_obj_add_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -99,7 +97,7 @@ void ui_overlay_show(const char* title, const char* value, const char* hint)
 {
     overlay_ensure_created();
 
-    // Zekerheid: overlay naar voorgrond
+    // Ensure overlay to foreground
     if (ov_root) lv_obj_move_foreground(ov_root);
 
     if (ov_title && title) lv_label_set_text(ov_title, title);
@@ -109,19 +107,18 @@ void ui_overlay_show(const char* title, const char* value, const char* hint)
     if (ov_root) lv_obj_clear_flag(ov_root, LV_OBJ_FLAG_HIDDEN);
 }
 
-// === FIX: display.cpp verwacht ui_overlay_update(...) ===
-// We verwijderen niks; we voegen dit toe.
+
 void ui_overlay_update(const char* title, const char* value, const char* hint)
 {
     overlay_ensure_created();
 
-    // Als hij nog verborgen is, behandel update als show
+    // If still hidden, treat update as show
     if (ov_root && lv_obj_has_flag(ov_root, LV_OBJ_FLAG_HIDDEN)) {
         ui_overlay_show(title, value, hint);
         return;
     }
 
-    // Anders: alleen teksten bijwerken
+    // Otherwise: update texts only
     if (ov_root) lv_obj_move_foreground(ov_root);
     if (ov_title && title) lv_label_set_text(ov_title, title);
     if (ov_value && value) lv_label_set_text(ov_value, value);
@@ -167,7 +164,7 @@ static void set_btn_style(lv_obj_t* btn, lv_obj_t* lbl, bool highlight)
     }
 }
 
-// ---------- UI1: Emulate / laadcurve-scherm ----------
+// UI1: Emulate / discharge curve screen
 
 // --- UI 1 pointers ---
 static lv_obj_t* ui1_chart = nullptr;
@@ -182,7 +179,7 @@ static lv_obj_t* ui1_label_state       = nullptr;
 static lv_obj_t* ui1_lbl_btn_nominal_v = nullptr;
 static lv_obj_t* ui1_lbl_btn_capacity  = nullptr;
 
-// lijn in de grafiek
+// Line in chart
 static lv_obj_t* ui1_progress_line     = nullptr;
 static lv_point_precise_t ui1_progress_pts[2];
 
@@ -213,7 +210,7 @@ static lv_obj_t* make_btn(lv_obj_t* parent, const char* txt)
     return btn;
 }
 
-// helper: verticale lijnpositie updaten op basis van progress_index + curve (mV)
+// Helper: update vertical line position based on progress_index + curve (mV)
 void ui1_update_progress_line(const DisplayModel& m)
 {
     if (!ui1_chart || !ui1_progress_line) return;
@@ -236,7 +233,7 @@ void ui1_update_progress_line(const DisplayModel& m)
     if (v < 0) v = 0;
     if (v > 15000) v = 15000;
 
-    // map mV naar pixel (0=top)
+    // Map mV to pixel (0=top)
     int y_curve = (graph_height - 1) - (graph_height - 1) * v / 15000;
 
     ui1_progress_pts[0].x = x;
@@ -260,7 +257,7 @@ void ui1_create() {
   lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
-  // Chart links
+  // Chart left
   ui1_chart = lv_chart_create(scr);
   lv_obj_set_size(ui1_chart, 320, 160);
   lv_obj_align(ui1_chart, LV_ALIGN_TOP_LEFT, 10, 35);
@@ -276,7 +273,7 @@ void ui1_create() {
   ui1_series = lv_chart_add_series(ui1_chart, lv_color_hex(UI_COL_CHART_SERIES), LV_CHART_AXIS_PRIMARY_Y);
   for (int i = 0; i < 32; ++i) lv_chart_set_next_value(ui1_chart, ui1_series, 0);
 
-  // progress line object
+  // Progress line object
   ui1_progress_line = lv_line_create(ui1_chart);
   lv_obj_set_style_line_width(ui1_progress_line, 2, 0);
   lv_obj_set_style_line_color(ui1_progress_line, lv_color_hex(UI_COL_CHART_LINE), 0);
@@ -284,7 +281,7 @@ void ui1_create() {
   ui1_progress_pts[1].x = 0; ui1_progress_pts[1].y = 10;
   lv_line_set_points(ui1_progress_line, ui1_progress_pts, 2);
 
-  // labels (laat jouw bestaande posities intact; alleen inhoud is mAh)
+  // Labels (keep existing positions; content only in mAh)
   ui1_label_v_meas = lv_label_create(scr);
   lv_obj_set_style_text_color(ui1_label_v_meas, lv_color_hex(UI_COL_TEXT), 0);
   lv_label_set_text(ui1_label_v_meas, "Voltage = 0.00 V");
@@ -310,15 +307,13 @@ void ui1_create() {
   lv_label_set_text(ui1_label_state, "Current state = load");
   lv_obj_align(ui1_label_state, LV_ALIGN_BOTTOM_LEFT, 280, -20);
 
-  // Knoppen labels (als jij die al had: alleen references houden)
-  // Zorg dat ui1_lbl_btn_nominal_v en ui1_lbl_btn_capacity in jouw create gevuld worden,
-  // zodat update() ze kan aanpassen.
+  // Button labels (keep references if present; let update() modify them)
 }
 
 void ui1_update(const DisplayModel& m) {
   char buf[64];
 
-  // curve in chart
+  // Curve in chart
   if (ui1_chart && ui1_series) {
     const int n = (m.ui1.curve_len > 32) ? 32 : m.ui1.curve_len;
     for (int i = 0; i < n; ++i) {
@@ -349,7 +344,7 @@ void ui1_update(const DisplayModel& m) {
 
   ui1_update_progress_line(m);
 
-  // buttons (als labels bestaan)
+  // Buttons (if labels exist)
   if (ui1_lbl_btn_nominal_v) {
     snprintf(buf, sizeof(buf), "Nominal voltage:\n%.2f V", m.ui1.nominal_v_val);
     lv_label_set_text(ui1_lbl_btn_nominal_v, buf);

@@ -6,39 +6,43 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-// interne opslag
+// Internal storage
 static SystemData g_sys;
 static SemaphoreHandle_t g_data_mutex = nullptr;
 static SemaphoreHandle_t g_i2c_mutex  = nullptr;
 
-// Curves in permille (0..1000). X-as = capaciteit (0..capacity_set_mAh) gelijk verdeeld over CURVE_LEN.
+// Curves in permille (0..1000). X-axis = capacity (0..capacity_set_mAh) equally spaced over CURVE_LEN.
 static void init_default_curves(CurveData* c)
 {
     if (!c) return;
     c->len = CURVE_LEN;
 
-    // Curve 0: Li-ion (NMC) typische discharge shape
+    // Curve 0: Li-ion (1S) discharge shape (typical NMC/LCO)
+    // Shape: quick drop -> plateau -> knee.
+    // Normalized to Vmax (e.g. 4.2V). End ~0.714 (3.0/4.2).
     const int16_t liion[CURVE_LEN] = {
-        1000,995,990,985,980,975,970,968,
-        965,962,960,957,955,952,950,947,
-        942,935,925,910,895,875,850,820,
-        790,760,720,670,600,500,320,120
+        1000, 977, 962, 958, 954, 949, 945, 941,
+         936, 932, 928, 923, 919, 915, 910, 906,
+         902, 898, 893, 889, 885, 880, 876, 872,
+         867, 863, 859, 837, 806, 776, 745, 714
     };
 
-    // Curve 1: LiFePO4 vlak plateau, daarna snelle drop
+    // Curve 1: LiFePO4 (1S) flat plateau, then clear knee.
+    // Normalized to Vmax (e.g. 3.65V). End ~0.767 (2.8/3.65).
     const int16_t lifepo4[CURVE_LEN] = {
-        1000,998,996,994,992,990,988,986,
-        985,984,983,982,981,980,979,978,
-        977,976,975,974,972,970,965,955,
-        930,890,820,720,560,400,220,80
+        1000, 945, 943, 941, 939, 937, 935, 933,
+         931, 929, 927, 925, 923, 921, 919, 917,
+         915, 913, 911, 908, 906, 904, 902, 900,
+         898, 896, 894, 892, 886, 847, 807, 767
     };
 
-    // Curve 2: Lead-acid meer lineaire sag
+    // Curve 2: Lead-acid (2V cell) more linear sag, mild plateau, then drop.
+    // Normalized to Vmax (2.12V). End ~0.825 (1.75/2.12).
     const int16_t leadacid[CURVE_LEN] = {
-        1000,992,984,976,968,960,952,944,
-        936,928,920,912,904,896,888,880,
-        872,864,856,848,840,832,820,805,
-        790,770,745,715,675,620,520,380
+        1000, 991, 982, 973, 969, 966, 963, 960,
+         957, 954, 951, 948, 945, 942, 939, 935,
+         932, 929, 926, 923, 920, 917, 914, 911,
+         908, 903, 890, 877, 864, 851, 838, 825
     };
 
     memcpy(c->curve0, liion, sizeof(liion));
@@ -54,15 +58,15 @@ void system_init(void)
     system_lock_data();
     memset(&g_sys, 0, sizeof(g_sys));
 
-    // curves
+    // Curves
     init_default_curves(&g_sys.curves);
 
     // UI defaults
-    g_sys.ui.active_screen        = UI_SCREEN_UI1;
-    g_sys.ui.selected_curve_id    = 0;
-    g_sys.ui.nominal_voltage_V    = 12.0f;   // “nominal pack voltage” voor emulator
-    g_sys.ui.capacity_set_mAh     = 3000;
-    g_sys.ui.start_capacity_mAh   = 0;
+    g_sys.ui.active_screen = UI_SCREEN_UI1;
+    g_sys.ui.selected_curve_id = 0;
+    g_sys.ui.nominal_voltage_V = 12.0f;   // "nominal pack voltage" for emulator
+    g_sys.ui.capacity_set_mAh = 3000;
+    g_sys.ui.start_capacity_mAh = 0;
 
     g_sys.ui.ui2_set_voltage      = 5.0f;
     g_sys.ui.ui2_current_limit    = 2.0f;

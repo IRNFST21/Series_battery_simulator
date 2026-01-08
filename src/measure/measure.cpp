@@ -9,17 +9,15 @@
 #include "measure/measure.h"
 
 // ================================
-// ADS8684 SPI pin mapping (vul exact in volgens jouw schema)
+// ADS8684 SPI pin mapping
 // ================================
-static constexpr int PIN_ADS_CS   = 10;
-static constexpr int PIN_ADS_SCLK = 12;
-static constexpr int PIN_ADS_MISO = 13;
-static constexpr int PIN_ADS_MOSI = 11;
-
-// In jouw setup wordt ADS_RESET niet gebruikt.
+static constexpr int PIN_ADS_CS   = 41;
+static constexpr int PIN_ADS_SCLK = 38;
+static constexpr int PIN_ADS_MISO = 39;
+static constexpr int PIN_ADS_MOSI = 40;
 static constexpr int PIN_ADS_RESET = -1;
 
-// ADS op SPI1
+// ADS on SPI1
 SPIClass SPI_ADS(FSPI);
 
 static inline void ads_cs_low()  { digitalWrite(PIN_ADS_CS, LOW); }
@@ -28,7 +26,7 @@ static inline void ads_cs_high() { digitalWrite(PIN_ADS_CS, HIGH); }
 static void ads_hw_reset()
 {
     if (PIN_ADS_RESET < 0) {
-        return; // geen reset-pin aangesloten
+        return;
     }
     pinMode(PIN_ADS_RESET, OUTPUT);
     digitalWrite(PIN_ADS_RESET, LOW);
@@ -44,17 +42,14 @@ static void ads_spi_init()
 
     SPI_ADS.begin(PIN_ADS_SCLK, PIN_ADS_MISO, PIN_ADS_MOSI, PIN_ADS_CS);
 
-    // Eventueel: als je ADS8684 init commands wil sturen, doen we dat later hier.
     ads_hw_reset();
 }
 
-// Placeholder: leest één kanaal en geeft de ADC ingangsspanning in Volt terug.
-// TODO: vervangen door echte ADS8684 SPI command/read flow.
 static bool ads_read_channel_voltage(uint8_t ch, float* v_adc)
 {
     if (!v_adc) return false;
 
-    // --- PLACEHOLDER ---
+    // Placeholder
     switch (ch)
     {
         case 0: *v_adc = 0.60f; break; // AIN1
@@ -88,9 +83,9 @@ extern "C" void measureTask(void* pvParameters)
         MeasurementData m{};
         m.t_us = (uint32_t)micros();
 
-        // Formules:
+        // Conversion formulas:
         // AIN1 sink current: I = 5/3 * V
-        // AIN2 voltage:      Vout = 5.333 * V
+        // AIN2 voltage: Vout = 5.333 * V
         // AIN3 source current: I = 5/3 * V
         // AIN4 temp: 125C == 1.75V -> T = V * (125/1.75)
         if (ok1) m.i_sink      = (5.0f / 3.0f) * v_adc_ain1;
