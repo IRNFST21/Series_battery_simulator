@@ -1,169 +1,83 @@
-Series Battery Simulator
-Overzicht
+# Series Battery Simulator
 
-De Series Battery Simulator is een embedded systeemproject dat een programmeermodel voor een seriële batterij implementeert op basis van een microcontrollerplatform. Het systeem meet elektrische grootheden, bestuurt hardware-uitgangen en presenteert status- en meetinformatie via een grafische interface.
+## Overview
 
-De architectuur is modulair opgezet en volgt een duidelijke scheiding tussen hardware-interactie, logica en presentatie.
+The Series Battery Simulator is an embedded project that implements a serial-battery emulation model on a microcontroller platform. It measures electrical signals, controls hardware outputs, and displays status and measurements via a graphical UI.
 
-Functionele doelstelling
+The codebase uses a modular architecture with a clear separation between hardware interaction, control logic and presentation.
 
-De Series Battery Simulator heeft als doel:
+## Features
+- Battery behavior emulation (series configuration)
+- Measurement and signal processing (voltage, current, temperature)
+- GUI (LVGL) with multiple screens
+- Mode/state management via a state machine
+- UART + SD logging for debugging and data capture
 
-Het simuleren van batterijgedrag in een serieconfiguratie
+## Architecture
 
-Het meten en verwerken van elektrische parameters
+Key design points:
+- Modular subsystems with single responsibility
+- Hardware abstraction layers for peripherals
+- Central state machine for system behavior
+- Separate display and UI logic
+- Simple logging layer (UART/SD)
 
-Het visualiseren van systeemstatus en metingen
+## Project Structure
 
-Het logisch aansturen van systeemtoestanden via een statemachine
-
-Het loggen van systeeminformatie voor debugging en analyse
-
-Architectuur en ontwerpkeuzes
-
-Het project is opgebouwd rond een modulaire software-architectuur, waarbij elke functionele verantwoordelijkheid in een eigen module is ondergebracht:
-
-Hardware-abstractie per subsysteem
-
-Centrale statemachine voor systeemgedrag
-
-Gescheiden display- en UI-logica
-
-Expliciete logginglaag
-
-Heldere main.cpp als applicatie-ingangspunt
-
-Deze aanpak vergemakkelijkt onderhoud, testen en toekomstige uitbreiding.
-
-Projectstructuur
 Series_battery_simulator/
-│
-├── src/
-│   ├── main.cpp                 # Applicatie entry point
-│   │
-│   ├── system/
-│   │   └── system.cpp           # Systeeminitialisatie en kernlogica
-│   │
-│   ├── statemachine/
-│   │   └── statemachine.cpp     # Centrale statemachine
-│   │
-│   ├── measure/
-│   │   └── measure.cpp          # Metingen en signaalverwerking
-│   │
-│   ├── display/
-│   │   ├── display.cpp          # Display hardware-aansturing
-│   │   └── ui_screens.cpp       # UI-schermen en layout
-│   │
-│   ├── ioexpander/
-│   │   └── ioExpander.cpp       # I/O-expander abstractie
-│   │
-│   └── log/
-│       └── log.cpp              # Logging en debug-output
-│
-├── test/
-│   └── README                   # Testdocumentatie
-│
-└── .pio/
-    └── libdeps/                 # PlatformIO dependencies (o.a. LVGL)
+- src/
+    - main.cpp                # Application entry
+    - system/                 # Central data & initialization
+        - system.cpp
+    - statemachine/           # Mode/state handling
+        - statemachine.cpp
+    - measure/                # ADC / measurement logic
+        - measure.cpp
+    - display/                # LVGL UI + display driver
+        - display.cpp
+        - ui_screens.cpp
+    - ioexpander/             # I/O expander (buttons, LEDs, encoder)
+        - ioExpander.cpp
+    - log/                    # UART/SD logging
+        - log.cpp
+- include/                  # Public headers
+- test/                     # Test documentation / future tests
 
-Belangrijkste modules
-main.cpp
+## Modules (short)
+- `main.cpp` — system init and task creation (FreeRTOS)
+- `system` — shared data structures and access API
+- `statemachine` — handles mode transitions and errors
+- `measure` — reads ADCs and converts to physical units
+- `display` / `ui_screens` — LVGL screens and rendering
+- `ioexpander` — reads buttons/encoder and controls LEDs/fan
+- `log` — prints CSV lines over UART and writes to SD
 
-Startpunt van de applicatie
+## Technologies
+- C++ (embedded)
+- PlatformIO
+- LVGL
+- ESP32-class microcontroller (target)
 
-Roept systeeminitialisatie aan
+## Development Principles
+- Modular design
+- Clear separation of hardware and logic
+- Readable, testable modules
 
-Beheert de hoofdlus
+## Testing
+The `test/` folder holds documentation for tests. The architecture is designed to allow adding unit and integration tests.
 
-system
+## Future Work
+- Improved battery models (internal resistance, temp effects)
+- Additional interfaces (USB, CAN)
+- Remote logging / external storage
+- Expanded fault handling and safety features
 
-Centrale configuratie en setup
+## Notes
+This repository was developed as part of an embedded systems project with emphasis on architecture and maintainability.
 
-Coördineert interactie tussen modules
+If you want, I can also:
+- Reformat for a school report / V-model presentation
+- Add a hardware overview section
+- Tailor the README for a specific reviewer or client
+- Produce a shorter, concise repo README
 
-statemachine
-
-Definieert systeemtoestanden
-
-Regelt transities op basis van events en metingen
-
-Vormt de kern van het functionele gedrag
-
-measure
-
-Verwerkt meetdata (bijv. spanning, stroom)
-
-Voorziet andere modules van gevalideerde waarden
-
-display en ui_screens
-
-Gebruikt LVGL voor de grafische interface
-
-Scheidt hardware-aansturing van UI-logica
-
-Maakt het eenvoudig om schermen uit te breiden
-
-ioexpander
-
-Abstractielaag voor externe I/O-expanders
-
-Houdt hardware-afhankelijkheid buiten de applicatielogica
-
-log
-
-Uniforme logging-interface
-
-Geschikt voor UART/debug-uitvoer
-
-Gebruikte technologieën
-
-C++ (Embedded)
-
-PlatformIO
-
-LVGL (Light and Versatile Graphics Library)
-
-Microcontrollerplatform (ESP32-klasse, afhankelijk van target)
-
-Ontwikkelprincipes
-
-Modulaire opbouw
-
-Single Responsibility per module
-
-Hardware-abstractie
-
-Duidelijke scheiding tussen logica en presentatie
-
-Schaalbaar voor toekomstige uitbreidingen
-
-Testen
-
-De map test/ is gereserveerd voor testdocumentatie en (toekomstige) testimplementaties.
-De architectuur is zodanig opgezet dat unit- en integratietests eenvoudig toegevoegd kunnen worden.
-
-Toekomstige uitbreidingen
-
-Uitgebreidere batterijmodellen (interne weerstand, temperatuurinvloed)
-
-Communicatie-interfaces (USB / UART / CAN)
-
-Logging naar extern geheugen
-
-Uitgebreide fout- en veiligheidsafhandeling
-
-Automatische testframework-integratie
-
-Context
-
-Dit project is ontwikkeld binnen een technisch embedded systems-traject, met nadruk op architectuur, betrouwbaarheid en professionele codeopbouw.
-
-Als je wilt, kan ik dit nog:
-
-herschrijven naar V-model / schoolopdracht-stijl
-
-uitbreiden met een hardware-overzicht
-
-aanpassen voor opdrachtgever / beoordelaar
-
-verkorten tot een strakke repo-README
