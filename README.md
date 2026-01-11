@@ -74,10 +74,3 @@ The `test/` folder holds documentation for tests. The architecture is designed t
 
 ## Notes
 This repository was developed as part of an embedded systems project with emphasis on architecture and maintainability.
-
-If you want, I can also:
-- Reformat for a school report / V-model presentation
-- Add a hardware overview section
-- Tailor the README for a specific reviewer or client
-- Produce a shorter, concise repo README
-
