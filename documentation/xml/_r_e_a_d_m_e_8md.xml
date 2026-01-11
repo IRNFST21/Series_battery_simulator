@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.16.1" xml:lang="en-US">
+  <compounddef id="_r_e_a_d_m_e_8md" kind="file" language="Markdown">
+    <compoundname>README.md</compoundname>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <programlisting>
+<codeline><highlight class="normal">#<sp/>Series<sp/>Battery<sp/>Simulator</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Overview</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">The<sp/>Series<sp/>Battery<sp/>Simulator<sp/>is<sp/>an<sp/>embedded<sp/>project<sp/>that<sp/>implements<sp/>a<sp/>serial-battery<sp/>emulation<sp/>model<sp/>on<sp/>a<sp/>microcontroller<sp/>platform.<sp/>It<sp/>measures<sp/>electrical<sp/>signals,<sp/>controls<sp/>hardware<sp/>outputs,<sp/>and<sp/>displays<sp/>status<sp/>and<sp/>measurements<sp/>via<sp/>a<sp/>graphical<sp/>UI.</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">The<sp/>codebase<sp/>uses<sp/>a<sp/>modular<sp/>architecture<sp/>with<sp/>a<sp/>clear<sp/>separation<sp/>between<sp/>hardware<sp/>interaction,<sp/>control<sp/>logic<sp/>and<sp/>presentation.</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Features</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Battery<sp/>behavior<sp/>emulation<sp/>(series<sp/>configuration)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Measurement<sp/>and<sp/>signal<sp/>processing<sp/>(voltage,<sp/>current,<sp/>temperature)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>GUI<sp/>(LVGL)<sp/>with<sp/>multiple<sp/>screens</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Mode/state<sp/>management<sp/>via<sp/>a<sp/>state<sp/>machine</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>UART<sp/>+<sp/>SD<sp/>logging<sp/>for<sp/>debugging<sp/>and<sp/>data<sp/>capture</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Architecture</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">Key<sp/>design<sp/>points:</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Modular<sp/>subsystems<sp/>with<sp/>single<sp/>responsibility</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Hardware<sp/>abstraction<sp/>layers<sp/>for<sp/>peripherals</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Central<sp/>state<sp/>machine<sp/>for<sp/>system<sp/>behavior</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Separate<sp/>display<sp/>and<sp/>UI<sp/>logic</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Simple<sp/>logging<sp/>layer<sp/>(UART/SD)</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Project<sp/>Structure</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">Series_battery_simulator/</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>src/</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>main.cpp<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>Application<sp/>entry</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>system/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>Central<sp/>data<sp/>&amp;<sp/>initialization</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>system.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>statemachine/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>Mode/state<sp/>handling</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>statemachine.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>measure/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>ADC<sp/>/<sp/>measurement<sp/>logic</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>measure.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>display/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>LVGL<sp/>UI<sp/>+<sp/>display<sp/>driver</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>display.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>ui_screens.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>ioexpander/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>I/O<sp/>expander<sp/>(buttons,<sp/>LEDs,<sp/>encoder)</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>ioExpander.cpp</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/>-<sp/>log/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>UART/SD<sp/>logging</highlight></codeline>
+<codeline><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>-<sp/>log.cpp</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>include/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>Public<sp/>headers</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>test/<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>#<sp/>Test<sp/>documentation<sp/>/<sp/>future<sp/>tests</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Modules<sp/>(short)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`main.cpp`<sp/>—<sp/>system<sp/>init<sp/>and<sp/>task<sp/>creation<sp/>(FreeRTOS)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`system`<sp/>—<sp/>shared<sp/>data<sp/>structures<sp/>and<sp/>access<sp/>API</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`statemachine`<sp/>—<sp/>handles<sp/>mode<sp/>transitions<sp/>and<sp/>errors</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`measure`<sp/>—<sp/>reads<sp/>ADCs<sp/>and<sp/>converts<sp/>to<sp/>physical<sp/>units</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`display`<sp/>/<sp/>`ui_screens`<sp/>—<sp/>LVGL<sp/>screens<sp/>and<sp/>rendering</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`ioexpander`<sp/>—<sp/>reads<sp/>buttons/encoder<sp/>and<sp/>controls<sp/>LEDs/fan</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>`log`<sp/>—<sp/>prints<sp/>CSV<sp/>lines<sp/>over<sp/>UART<sp/>and<sp/>writes<sp/>to<sp/>SD</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Technologies</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>C++<sp/>(embedded)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>PlatformIO</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>LVGL</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>ESP32-class<sp/>microcontroller<sp/>(target)</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Development<sp/>Principles</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Modular<sp/>design</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Clear<sp/>separation<sp/>of<sp/>hardware<sp/>and<sp/>logic</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Readable,<sp/>testable<sp/>modules</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Testing</highlight></codeline>
+<codeline><highlight class="normal">The<sp/>`test/`<sp/>folder<sp/>holds<sp/>documentation<sp/>for<sp/>tests.<sp/>The<sp/>architecture<sp/>is<sp/>designed<sp/>to<sp/>allow<sp/>adding<sp/>unit<sp/>and<sp/>integration<sp/>tests.</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Future<sp/>Work</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Improved<sp/>battery<sp/>models<sp/>(internal<sp/>resistance,<sp/>temp<sp/>effects)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Additional<sp/>interfaces<sp/>(USB,<sp/>CAN)</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Remote<sp/>logging<sp/>/<sp/>external<sp/>storage</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Expanded<sp/>fault<sp/>handling<sp/>and<sp/>safety<sp/>features</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">##<sp/>Notes</highlight></codeline>
+<codeline><highlight class="normal">This<sp/>repository<sp/>was<sp/>developed<sp/>as<sp/>part<sp/>of<sp/>an<sp/>embedded<sp/>systems<sp/>project<sp/>with<sp/>emphasis<sp/>on<sp/>architecture<sp/>and<sp/>maintainability.</highlight></codeline>
+<codeline></codeline>
+<codeline><highlight class="normal">If<sp/>you<sp/>want,<sp/>I<sp/>can<sp/>also:</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Reformat<sp/>for<sp/>a<sp/>school<sp/>report<sp/>/<sp/>V-model<sp/>presentation</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Add<sp/>a<sp/>hardware<sp/>overview<sp/>section</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Tailor<sp/>the<sp/>README<sp/>for<sp/>a<sp/>specific<sp/>reviewer<sp/>or<sp/>client</highlight></codeline>
+<codeline><highlight class="normal">-<sp/>Produce<sp/>a<sp/>shorter,<sp/>concise<sp/>repo<sp/>README</highlight></codeline>
+<codeline></codeline>
+    </programlisting>
+    <location file="README.md"/>
+  </compounddef>
+</doxygen>

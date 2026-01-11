@@ -1,0 +1,159 @@
+.TH "md__r_e_a_d_m_e" 3 "Version 1" "Series_battery_simulator_doc" \" -*- nroff -*-
+.ad l
+.nh
+.SH NAME
+md__r_e_a_d_m_e \- Series Battery Simulator 
+.PP
+
+.SH "Overview"
+.PP
+The Series Battery Simulator is an embedded project that implements a serial-battery emulation model on a microcontroller platform\&. It measures electrical signals, controls hardware outputs, and displays status and measurements via a graphical UI\&.
+
+.PP
+The codebase uses a modular architecture with a clear separation between hardware interaction, control logic and presentation\&.
+.SH "Features"
+.PP
+.IP "\(bu" 2
+Battery behavior emulation (series configuration)
+.IP "\(bu" 2
+Measurement and signal processing (voltage, current, temperature)
+.IP "\(bu" 2
+GUI (LVGL) with multiple screens
+.IP "\(bu" 2
+Mode/state management via a state machine
+.IP "\(bu" 2
+UART + SD logging for debugging and data capture
+.PP
+.SH "Architecture"
+.PP
+Key design points:
+.IP "\(bu" 2
+Modular subsystems with single responsibility
+.IP "\(bu" 2
+Hardware abstraction layers for peripherals
+.IP "\(bu" 2
+Central state machine for system behavior
+.IP "\(bu" 2
+Separate display and UI logic
+.IP "\(bu" 2
+Simple logging layer (UART/SD)
+.PP
+.SH "Project Structure"
+.PP
+Series_battery_simulator/
+.IP "\(bu" 2
+src/
+.IP "  \(bu" 4
+main\&.cpp # Application entry
+.IP "  \(bu" 4
+system/ # Central data & initialization
+.IP "    \(bu" 6
+system\&.cpp
+.PP
+
+.IP "  \(bu" 4
+statemachine/ # Mode/state handling
+.IP "    \(bu" 6
+statemachine\&.cpp
+.PP
+
+.IP "  \(bu" 4
+measure/ # ADC / measurement logic
+.IP "    \(bu" 6
+measure\&.cpp
+.PP
+
+.IP "  \(bu" 4
+display/ # LVGL UI + display driver
+.IP "    \(bu" 6
+display\&.cpp
+.IP "    \(bu" 6
+ui_screens\&.cpp
+.PP
+
+.IP "  \(bu" 4
+ioexpander/ # I/O expander (buttons, LEDs, encoder)
+.IP "    \(bu" 6
+ioExpander\&.cpp
+.PP
+
+.IP "  \(bu" 4
+log/ # UART/SD logging
+.IP "    \(bu" 6
+log\&.cpp
+.PP
+
+.PP
+
+.IP "\(bu" 2
+include/ # Public headers
+.IP "\(bu" 2
+test/ # Test documentation / future tests
+.PP
+.SH "Modules (short)"
+.PP
+.IP "\(bu" 2
+\fRmain\&.cpp\fP — system init and task creation (FreeRTOS)
+.IP "\(bu" 2
+\fRsystem\fP — shared data structures and access API
+.IP "\(bu" 2
+\fRstatemachine\fP — handles mode transitions and errors
+.IP "\(bu" 2
+\fRmeasure\fP — reads ADCs and converts to physical units
+.IP "\(bu" 2
+\fRdisplay\fP / \fRui_screens\fP — LVGL screens and rendering
+.IP "\(bu" 2
+\fRioexpander\fP — reads buttons/encoder and controls LEDs/fan
+.IP "\(bu" 2
+\fRlog\fP — prints CSV lines over UART and writes to SD
+.PP
+.SH "Technologies"
+.PP
+.IP "\(bu" 2
+C++ (embedded)
+.IP "\(bu" 2
+PlatformIO
+.IP "\(bu" 2
+LVGL
+.IP "\(bu" 2
+ESP32-class microcontroller (target)
+.PP
+.SH "Development Principles"
+.PP
+.IP "\(bu" 2
+Modular design
+.IP "\(bu" 2
+Clear separation of hardware and logic
+.IP "\(bu" 2
+Readable, testable modules
+.PP
+.SH "Testing"
+.PP
+The \fRtest/\fP folder holds documentation for tests\&. The architecture is designed to allow adding unit and integration tests\&.
+.SH "Future Work"
+.PP
+.IP "\(bu" 2
+Improved battery models (internal resistance, temp effects)
+.IP "\(bu" 2
+Additional interfaces (USB, CAN)
+.IP "\(bu" 2
+Remote logging / external storage
+.IP "\(bu" 2
+Expanded fault handling and safety features
+.PP
+.SH "Notes"
+.PP
+This repository was developed as part of an embedded systems project with emphasis on architecture and maintainability\&.
+
+.PP
+If you want, I can also:
+.IP "\(bu" 2
+Reformat for a school report / V-model presentation
+.IP "\(bu" 2
+Add a hardware overview section
+.IP "\(bu" 2
+Tailor the README for a specific reviewer or client
+.IP "\(bu" 2
+Produce a shorter, concise repo README 
+.PP
+

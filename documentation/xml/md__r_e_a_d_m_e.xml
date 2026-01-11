@@ -1,0 +1,124 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.16.1" xml:lang="en-US">
+  <compounddef id="md__r_e_a_d_m_e" kind="page">
+    <compoundname>md__r_e_a_d_m_e</compoundname>
+    <title>Series Battery Simulator</title>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+<para><anchor id="md__r_e_a_d_m_e_1autotoc_md0"/></para>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md1">
+<title>Overview</title><para>The Series Battery Simulator is an embedded project that implements a serial-battery emulation model on a microcontroller platform. It measures electrical signals, controls hardware outputs, and displays status and measurements via a graphical UI.</para>
+<para>The codebase uses a modular architecture with a clear separation between hardware interaction, control logic and presentation.</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md2">
+<title>Features</title><para><itemizedlist>
+<listitem><para>Battery behavior emulation (series configuration)</para>
+</listitem><listitem><para>Measurement and signal processing (voltage, current, temperature)</para>
+</listitem><listitem><para>GUI (LVGL) with multiple screens</para>
+</listitem><listitem><para>Mode/state management via a state machine</para>
+</listitem><listitem><para>UART + SD logging for debugging and data capture</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md3">
+<title>Architecture</title><para>Key design points:<itemizedlist>
+<listitem><para>Modular subsystems with single responsibility</para>
+</listitem><listitem><para>Hardware abstraction layers for peripherals</para>
+</listitem><listitem><para>Central state machine for system behavior</para>
+</listitem><listitem><para>Separate display and UI logic</para>
+</listitem><listitem><para>Simple logging layer (UART/SD)</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md4">
+<title>Project Structure</title><para>Series_battery_simulator/<itemizedlist>
+<listitem><para>src/<itemizedlist>
+<listitem><para>main.cpp # Application entry</para>
+</listitem><listitem><para>system/ # Central data &amp; initialization<itemizedlist>
+<listitem><para>system.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>statemachine/ # Mode/state handling<itemizedlist>
+<listitem><para>statemachine.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>measure/ # ADC / measurement logic<itemizedlist>
+<listitem><para>measure.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>display/ # LVGL UI + display driver<itemizedlist>
+<listitem><para>display.cpp</para>
+</listitem><listitem><para>ui_screens.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>ioexpander/ # I/O expander (buttons, LEDs, encoder)<itemizedlist>
+<listitem><para>ioExpander.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>log/ # UART/SD logging<itemizedlist>
+<listitem><para>log.cpp</para>
+</listitem></itemizedlist>
+</para>
+</listitem></itemizedlist>
+</para>
+</listitem><listitem><para>include/ # Public headers</para>
+</listitem><listitem><para>test/ # Test documentation / future tests</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md5">
+<title>Modules (short)</title><para><itemizedlist>
+<listitem><para><computeroutput>main.cpp</computeroutput> — system init and task creation (FreeRTOS)</para>
+</listitem><listitem><para><computeroutput>system</computeroutput> — shared data structures and access API</para>
+</listitem><listitem><para><computeroutput>statemachine</computeroutput> — handles mode transitions and errors</para>
+</listitem><listitem><para><computeroutput>measure</computeroutput> — reads ADCs and converts to physical units</para>
+</listitem><listitem><para><computeroutput>display</computeroutput> / <computeroutput>ui_screens</computeroutput> — LVGL screens and rendering</para>
+</listitem><listitem><para><computeroutput>ioexpander</computeroutput> — reads buttons/encoder and controls LEDs/fan</para>
+</listitem><listitem><para><computeroutput>log</computeroutput> — prints CSV lines over UART and writes to SD</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md6">
+<title>Technologies</title><para><itemizedlist>
+<listitem><para>C++ (embedded)</para>
+</listitem><listitem><para>PlatformIO</para>
+</listitem><listitem><para>LVGL</para>
+</listitem><listitem><para>ESP32-class microcontroller (target)</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md7">
+<title>Development Principles</title><para><itemizedlist>
+<listitem><para>Modular design</para>
+</listitem><listitem><para>Clear separation of hardware and logic</para>
+</listitem><listitem><para>Readable, testable modules</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md8">
+<title>Testing</title><para>The <computeroutput>test/</computeroutput> folder holds documentation for tests. The architecture is designed to allow adding unit and integration tests.</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md9">
+<title>Future Work</title><para><itemizedlist>
+<listitem><para>Improved battery models (internal resistance, temp effects)</para>
+</listitem><listitem><para>Additional interfaces (USB, CAN)</para>
+</listitem><listitem><para>Remote logging / external storage</para>
+</listitem><listitem><para>Expanded fault handling and safety features</para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+<sect1 id="md__r_e_a_d_m_e_1autotoc_md10">
+<title>Notes</title><para>This repository was developed as part of an embedded systems project with emphasis on architecture and maintainability.</para>
+<para>If you want, I can also:<itemizedlist>
+<listitem><para>Reformat for a school report / V-model presentation</para>
+</listitem><listitem><para>Add a hardware overview section</para>
+</listitem><listitem><para>Tailor the README for a specific reviewer or client</para>
+</listitem><listitem><para>Produce a shorter, concise repo README </para>
+</listitem></itemizedlist>
+</para>
+</sect1>
+    </detaileddescription>
+    <location file="README.md"/>
+  </compounddef>
+</doxygen>
